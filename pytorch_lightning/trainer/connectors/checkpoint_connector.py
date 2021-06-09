@@ -98,7 +98,7 @@ class CheckpointConnector:
         # wait for all to catch up
         self.trainer.training_type_plugin.barrier("CheckpointConnector.resume_end")
 
-    def restore(self, checkpoint_path: Optional[Union[Path, str]] = None) -> bool:
+    def restore(self, checkpoint_path: Optional[Union[Path, str]] = None):
         """
         Attempt to restore everything at once from a 'PyTorch-Lightning checkpoint' file
         through file-read and state-restore, in this priority:
@@ -108,11 +108,10 @@ class CheckpointConnector:
         3. don't restore
 
         All restored states are listed in return value description of `dump_checkpoint`.
-        """
-        # checkpoint, load_optimizer_states = self.trainer.training_type_plugin.restore_model_state_from_ckpt_path(
-        #     checkpoint_path, map_location=lambda storage, loc: storage
-        # )
 
+        Args:
+            checkpoint_path: Path to a PyTorch Lightning checkpoint file.
+        """
         self.resume_checkpoint_path = checkpoint_path
         self.resume_start()
 
@@ -126,16 +125,17 @@ class CheckpointConnector:
         # restore training state
         self.restore_training_state()
         self.resume_end()
-        return True
 
     def restore_datamodule(self) -> None:
+        """ Calls hooks on the datamodule to give it a chance to restore its state from the checkpoint. """
         datamodule = self.trainer.datamodule
         if datamodule is not None:
             datamodule.on_load_checkpoint(self._loaded_checkpoint)
 
     def restore_model(self) -> None:
         """
-        Restore model states from a 'PyTorch-Lightning checkpoint' dictionary object
+        Restores a model's state from a PyTorch Lightning checkpoint. Hooks are called first, the weights get
+        restored last.
         """
         if self.trainer.training_type_plugin.plugin_restores_model or not self._loaded_checkpoint:
             return
@@ -164,7 +164,7 @@ class CheckpointConnector:
             checkpoint = pl_load(checkpoint_path, map_location=(lambda storage, loc: storage))
 
         model = self.trainer.lightning_module
-        model.on_load_checkpoint(self._loaded_checkpoint)
+        model.on_load_checkpoint(checkpoint)
         model.load_state_dict(checkpoint["state_dict"])
 
     def restore_training_state(self):
