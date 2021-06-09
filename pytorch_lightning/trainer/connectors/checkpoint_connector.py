@@ -21,7 +21,8 @@ import torch
 
 import pytorch_lightning
 from pytorch_lightning.core.lightning import LightningModule
-from pytorch_lightning.utilities import _OMEGACONF_AVAILABLE, DeviceType, rank_zero_info, rank_zero_warn
+from pytorch_lightning.utilities import _OMEGACONF_AVAILABLE, DeviceType, rank_zero_info, rank_zero_warn, \
+    rank_zero_deprecation
 from pytorch_lightning.utilities.cloud_io import atomic_save, get_filesystem
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from pytorch_lightning.utilities.exceptions import MisconfigurationException
@@ -98,7 +99,7 @@ class CheckpointConnector:
         # wait for all to catch up
         self.trainer.training_type_plugin.barrier("CheckpointConnector.resume_end")
 
-    def restore(self, checkpoint_path: Optional[Union[Path, str]] = None):
+    def restore(self, checkpoint_path: Optional[Union[Path, str]] = None) -> None:
         """
         Attempt to restore everything at once from a 'PyTorch-Lightning checkpoint' file
         through file-read and state-restore, in this priority:
@@ -167,12 +168,11 @@ class CheckpointConnector:
         model.on_load_checkpoint(checkpoint)
         model.load_state_dict(checkpoint["state_dict"])
 
-    def restore_training_state(self):
+    def restore_training_state(self) -> None:
         """
-        Restore trainer state.
-        Model will get its change to update
+        Restore the trainer state from the pre-loaded checkpoint. This includes the precision settings, loop progress,
+        optimizer states and learning rate scheduler states.
         """
-
         if not self._loaded_checkpoint:
             return
 
@@ -184,6 +184,7 @@ class CheckpointConnector:
         self.restore_optimizers_and_schedulers()
 
     def restore_callbacks(self) -> None:
+        """ Restores all callbacks from the pre-loaded checkpoint. """
         if not self._loaded_checkpoint:
             return
 
@@ -197,6 +198,10 @@ class CheckpointConnector:
         self.trainer.on_load_checkpoint(self._loaded_checkpoint)
 
     def restore_progress(self) -> None:
+        """
+        Restores the training progress from the pre-loaded checkpoint. This currently includes only the global step
+        and current epoch.
+        """
         if not self._loaded_checkpoint:
             return
 
@@ -224,6 +229,7 @@ class CheckpointConnector:
             )
 
     def restore_optimizers_and_schedulers(self) -> None:
+        """ Restores the optimizers and learning rate scheduler states from the pre-loaded checkpoint. """
         if self.trainer.training_type_plugin.plugin_restores_optimizers or not self._loaded_checkpoint:
             return
 
@@ -237,6 +243,7 @@ class CheckpointConnector:
         self.restore_lr_schedulers()
 
     def restore_optimizers(self) -> None:
+        """ Restores the optimizer states from the pre-loaded checkpoint. """
         if self.trainer.training_type_plugin.plugin_restores_optimizers or not self._loaded_checkpoint:
             return
 
@@ -254,6 +261,7 @@ class CheckpointConnector:
                             state[k] = v.cuda(self.trainer.root_gpu)
 
     def restore_lr_schedulers(self) -> None:
+        """ Restores the learning rate scheduler states from the pre-loaded checkpoint. """
         if self.trainer.training_type_plugin.plugin_restores_optimizers or not self._loaded_checkpoint:
             return
 
@@ -266,6 +274,17 @@ class CheckpointConnector:
     # PRIVATE OPS
     # ----------------------------------
     def hpc_load(self, checkpoint_path: str):
+        """
+        Attempts to restore the full training and model state from a HPC checkpoint file.
+
+        .. deprecated::
+            `CheckpointConnector.hpc_load` was deprecated in v1.4 and will be removed in v1.6.
+            Use `CheckpointConnector.restore` instead.
+        """
+        rank_zero_deprecation(
+            "`CheckpointConnector.hpc_load()` was deprecated in v1.4 and will be removed in v1.6."
+            " Use `CheckpointConnector.restore()` instead."
+        )
         self.restore(checkpoint_path)
 
     def hpc_save(self, folderpath: str, logger):
