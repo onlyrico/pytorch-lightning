@@ -98,10 +98,6 @@ class CheckpointConnector:
         # wait for all to catch up
         self.trainer.training_type_plugin.barrier("CheckpointConnector.resume_end")
 
-    def hpc_load(self, checkpoint_path: str, on_gpu: bool):
-        # TODO: unused?
-        self.restore(checkpoint_path)
-
     def restore(self, checkpoint_path: Optional[Union[Path, str]] = None) -> bool:
         """
         Attempt to restore everything at once from a 'PyTorch-Lightning checkpoint' file
@@ -156,7 +152,7 @@ class CheckpointConnector:
         # restore model state_dict
         model.load_state_dict(self._loaded_checkpoint["state_dict"])
 
-        # TODO: this does not belong here
+        # FIXME: this does not belong here
         on_gpu = self.trainer._device_type == DeviceType.GPU
         if on_gpu:
             model.cuda(self.trainer.root_gpu)
@@ -269,6 +265,9 @@ class CheckpointConnector:
     # ----------------------------------
     # PRIVATE OPS
     # ----------------------------------
+    def hpc_load(self, checkpoint_path: str):
+        self.restore(checkpoint_path)
+
     def hpc_save(self, folderpath: str, logger):
         # make sure the checkpoint folder exists
         folderpath = str(folderpath)  # because the tests pass a path object
