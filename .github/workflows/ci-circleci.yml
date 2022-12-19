@@ -27,6 +27,6 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.repository_owner == 'Lightning-AI' }}  # skip for forks as secrets cannot be shared
     steps:
-      - uses: CircleCI-Public/trigger-circleci-pipeline-action@v1.0.5
+      - uses: CircleCI-Public/trigger-circleci-pipeline-action@v1.0.6
         env:
           CCI_TOKEN: ${{ secrets.CCI_TOKEN }}
