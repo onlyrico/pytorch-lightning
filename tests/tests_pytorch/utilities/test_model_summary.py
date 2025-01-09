@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,15 +11,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from collections import OrderedDict
 from typing import Any
+from unittest import mock
 
 import pytest
 import torch
 import torch.nn as nn
 
-from pytorch_lightning import LightningModule, Trainer
-from pytorch_lightning.demos.boring_classes import BoringModel
-from pytorch_lightning.utilities.model_summary.model_summary import ModelSummary, summarize, UNKNOWN_SIZE
+from lightning.pytorch import LightningModule, Trainer
+from lightning.pytorch.demos.boring_classes import BoringModel
+from lightning.pytorch.utilities.model_summary.model_summary import (
+    LEFTOVER_PARAMS_NAME,
+    NOT_APPLICABLE,
+    UNKNOWN_SIZE,
+    ModelSummary,
+    summarize,
+)
 from tests_pytorch.helpers.advanced_models import ParityModuleRNN
 from tests_pytorch.helpers.runif import RunIf
 
@@ -137,6 +145,18 @@ class DeepNestedModel(LightningModule):
         return self.head(self.branch1(inp), self.branch2(inp))
 
 
+class NonLayerParamsModel(LightningModule):
+    """A model with parameters not associated with pytorch layer."""
+
+    def __init__(self):
+        super().__init__()
+        self.param = torch.nn.Parameter(torch.ones(2, 2))
+        self.layer = torch.nn.Linear(2, 2)
+
+    def forward(self, inp):
+        self.layer(self.param @ inp)
+
+
 def test_invalid_max_depth():
     """Test that invalid value for max_depth raises an error."""
     model = LightningModule()
@@ -246,12 +266,13 @@ def test_summary_with_scripted_modules(max_depth):
 
 @pytest.mark.parametrize("max_depth", [-1, 1])
 @pytest.mark.parametrize(
-    ["example_input", "expected_size"],
+    ("example_input", "expected_size"),
     [
         ([], UNKNOWN_SIZE),
         ((1, 2, 3), [UNKNOWN_SIZE] * 3),
         (torch.tensor(0), UNKNOWN_SIZE),
-        (dict(tensor=torch.zeros(1, 2, 3)), UNKNOWN_SIZE),
+        ({"tensor": torch.zeros(1, 2, 3)}, [1, 2, 3]),
+        ({"tensor0": torch.zeros(1, 2, 3), "tensor1": torch.zeros(4, 5, 6)}, [[1, 2, 3], [4, 5, 6]]),
         (torch.zeros(2, 3, 4), [2, 3, 4]),
         ([torch.zeros(2, 3), torch.zeros(4, 5)], [[2, 3], [4, 5]]),
         ((torch.zeros(2, 3), torch.zeros(4, 5)), [[2, 3], [4, 5]]),
@@ -292,7 +313,7 @@ def test_empty_model_size(max_depth):
     """Test empty model size is zero."""
     model = EmptyModule()
     summary = summarize(model, max_depth=max_depth)
-    assert 0.0 == summary.model_size
+    assert summary.model_size == 0.0
 
 
 @pytest.mark.parametrize(
@@ -302,13 +323,13 @@ def test_empty_model_size(max_depth):
         pytest.param("mps", marks=RunIf(mps=True)),
     ],
 )
-def test_model_size_precision(tmpdir, accelerator):
+def test_model_size_precision(tmp_path, accelerator):
     """Test model size for half and full precision."""
     model = PreCalculatedModel()
 
     # fit model
     trainer = Trainer(
-        default_root_dir=tmpdir, accelerator=accelerator, devices=1, max_steps=1, max_epochs=1, precision=32
+        default_root_dir=tmp_path, accelerator=accelerator, devices=1, max_steps=1, max_epochs=1, precision=32
     )
     trainer.fit(model)
     summary = summarize(model)
@@ -320,13 +341,21 @@ def test_lazy_model_summary():
     lazy_model = LazyModel()
     summary = ModelSummary(lazy_model)
 
-    with pytest.warns(
-        UserWarning,
-        match=r"A layer with UninitializedParameter was found. "
-        r"Thus, the total number of parameters detected may be inaccurate.",
-    ):
+    with pytest.warns(UserWarning, match="The total number of parameters detected may be inaccurate."):
         assert summary.total_parameters == 0
         assert summary.trainable_parameters == 0
+
+
+@mock.patch("lightning.pytorch.utilities.model_summary.model_summary._is_dtensor", return_value=True)
+def test_dtensor_model_summary(_):
+    """Test that the model summary can work with layers that have DTensor parameters."""
+    # We mock the `_is_dtensor` to pretend parameters are DTensors, because testing with real DTensors
+    # would require setting up distributed
+    dtensor_model = UnorderedModel()
+    summary = ModelSummary(dtensor_model)
+    assert summary.total_layer_params > 0
+    assert summary.total_parameters > 0
+    assert summary.trainable_parameters > 0
 
 
 @pytest.mark.parametrize("max_depth", [-1, 0, 1, 3, 999])
@@ -358,3 +387,102 @@ def test_summary_data_output(example_input):
     summary_data = summary._get_summary_data()
     for column_name, entries in summary_data:
         assert all(isinstance(entry, str) for entry in entries)
+
+
+@pytest.mark.parametrize("example_input", [None, torch.ones(2, 2)])
+def test_summary_data_with_non_layer_params(example_input):
+    model = NonLayerParamsModel()
+    model.example_input_array = example_input
+
+    summary = summarize(model)
+    summary_data = OrderedDict(summary._get_summary_data())
+    assert summary_data[" "][-1] == " "
+    assert summary_data["Name"][-1] == LEFTOVER_PARAMS_NAME
+    assert summary_data["Type"][-1] == NOT_APPLICABLE
+    assert int(summary_data["Params"][-1]) == 4
+    if example_input is not None:
+        assert summary_data["In sizes"][-1] == NOT_APPLICABLE
+        assert summary_data["Out sizes"][-1] == NOT_APPLICABLE
+
+
+def test_summary_data_with_no_non_layer_params():
+    summary = summarize(PreCalculatedModel())
+    summary_data = OrderedDict(summary._get_summary_data())
+    assert summary_data["Name"][-1] != LEFTOVER_PARAMS_NAME
+
+
+def test_summary_restores_module_mode():
+    """Test that the model summary puts the model in `eval()` mode, but restores the original mode once finished."""
+
+    class Model(LightningModule):
+        def __init__(self):
+            super().__init__()
+            self.layer1 = torch.nn.Linear(2, 2)
+            self.layer2 = torch.nn.Linear(2, 2)
+            self.example_input_array = torch.rand(2, 2)
+
+        def forward(self, x):
+            assert not self.training
+            assert not self.layer1.training
+            assert not self.layer2.training
+            return self.layer2(self.layer1(x))
+
+    model = Model()
+    model.layer1.train()
+    model.layer2.eval()
+    summarize(model)
+    assert model.training
+    assert model.layer1.training
+    assert not model.layer2.training
+
+
+def test_total_training_modes():
+    """Test that the `total_training_modes` counts the modules in 'train' and 'eval' mode, excluding the root
+    module."""
+
+    class ModelWithoutChildren(LightningModule):
+        pass
+
+    summary = ModelSummary(ModelWithoutChildren())
+    assert summary.total_training_modes == {"train": 0, "eval": 0}
+
+    model = DeepNestedModel()
+    summary = ModelSummary(model)
+    assert summary.total_training_modes == {"train": 19, "eval": 0}
+    assert sum(summary.total_training_modes.values()) == len(list(model.modules())) - 1
+
+    model = DeepNestedModel()
+    summary = ModelSummary(model)
+    model.branch1[1][0].eval()
+    model.branch2.eval()
+    assert summary.total_training_modes == {"train": 17, "eval": 2}
+    assert sum(summary.total_training_modes.values()) == len(list(model.modules())) - 1
+
+
+def test_summary_training_mode():
+    """Test that the model summary captures the training mode on all submodules."""
+    model = DeepNestedModel()
+    model.branch1[1][0].eval()
+    model.branch2.eval()
+
+    summary = summarize(model, max_depth=1)
+    summary_data = OrderedDict(summary._get_summary_data())
+    assert summary_data["Mode"] == [
+        "train",  # branch1
+        "eval",  # branch2
+        "train",  # head
+    ]
+    assert summary.total_training_modes == {"train": 17, "eval": 2}
+
+    summary = summarize(model, max_depth=-1)
+    expected_eval = {"branch1.1.0", "branch2"}
+    for name, layer_summary in summary._layer_summary.items():
+        assert (name in expected_eval) == (not layer_summary.training)
+
+    # A model with params not belonging to a layer
+    model = NonLayerParamsModel()
+    model.layer.eval()
+    summary = summarize(model)
+    summary_data = OrderedDict(summary._get_summary_data())
+    assert summary_data["Mode"] == ["eval", "n/a"]
+    assert summary.total_training_modes == {"train": 0, "eval": 1}

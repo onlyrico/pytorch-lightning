@@ -12,11 +12,11 @@ Track and Visualize Experiments (advanced)
 ****************************
 Change progress bar defaults
 ****************************
-To change the default values (ie: version number) shown in the progress bar, override the :meth:`~pytorch_lightning.callbacks.progress.base.ProgressBarBase.get_metrics` method in your logger.
+To change the default values (ie: version number) shown in the progress bar, override the :meth:`~lightning.pytorch.callbacks.progress.progress_bar.ProgressBar.get_metrics` method in your logger.
 
 .. code-block:: python
 
-    from pytorch_lightning.callbacks.progress import Tqdm
+    from lightning.pytorch.callbacks.progress import Tqdm
 
 
     class CustomProgressBar(Tqdm):
@@ -37,7 +37,7 @@ Modify logging frequency
 ========================
 
 Logging a metric on every single batch can slow down training. By default, Lightning logs every 50 rows, or 50 training steps.
-To change this behaviour, set the *log_every_n_steps* :class:`~pytorch_lightning.trainer.trainer.Trainer` flag.
+To change this behaviour, set the *log_every_n_steps* :class:`~lightning.pytorch.trainer.trainer.Trainer` flag.
 
 .. testcode::
 
@@ -113,7 +113,7 @@ logger
 ======
 **Default:** True
 
-Send logs to the logger like ``Tensorboard``, or any other custom logger passed to the :class:`~pytorch_lightning.trainer.trainer.Trainer` (Default: ``True``).
+Send logs to the logger like ``Tensorboard``, or any other custom logger passed to the :class:`~lightning.pytorch.trainer.trainer.Trainer` (Default: ``True``).
 
 .. code-block:: python
 
@@ -196,21 +196,34 @@ If set to True, logs will be sent to the progress bar.
 
 rank_zero_only
 ==============
-**Default:** True
+**Default:** False
 
-Whether the value will be logged only on rank 0. This will prevent synchronization which would produce a deadlock as not all processes would perform this log call.
+Tells Lightning if you are calling ``self.log`` from every process (default) or only from rank 0.
+This is for advanced users who want to reduce their metric manually across processes, but still want to benefit from automatic logging via ``self.log``.
+
+- Set ``False`` (default) if you are calling ``self.log`` from every process.
+- Set ``True`` if you are calling ``self.log`` from rank 0 only. Caveat: you won't be able to use this metric as a monitor in callbacks (e.g., early stopping).
 
 .. code-block:: python
 
-  self.log(rank_zero_only=True)
+    # Default
+    self.log(..., rank_zero_only=False)
+
+    # If you call `self.log` on rank 0 only, you need to set `rank_zero_only=True`
+    if self.trainer.global_rank == 0:
+        self.log(..., rank_zero_only=True)
+
+    # DON'T do this, it will cause deadlocks!
+    self.log(..., rank_zero_only=True)
+
 
 ----
 
 reduce_fx
 =========
-**Default:** :meth:`torch.mean`
+**Default:** :func:`torch.mean`
 
-Reduction function over step values for end of epoch. Uses :meth:`torch.mean` by default and is not applied when a :class:`torchmetrics.Metric` is logged.
+Reduction function over step values for end of epoch. Uses :func:`torch.mean` by default and is not applied when a :class:`torchmetrics.Metric` is logged.
 
 .. code-block:: python
 
@@ -314,7 +327,7 @@ To save logs to a remote filesystem, prepend a protocol like "s3:/" to the root_
 
 .. code-block:: python
 
-    from pytorch_lightning.loggers import TensorBoardLogger
+    from lightning.pytorch.loggers import TensorBoardLogger
 
     logger = TensorBoardLogger(save_dir="s3://my_bucket/logs/")
 
@@ -334,7 +347,7 @@ To track the timeseries over steps (*on_step*) as well as the accumulated epoch 
 
 Setting both to True will generate two graphs with *_step* for the timeseries over steps and *_epoch* for the epoch metric.
 
-# TODO: show images of both
+.. TODO:: show images of both
 
 ----
 
@@ -355,10 +368,10 @@ In LightningModule
    * - Method
      - on_step
      - on_epoch
-   * - on_after_backward, on_before_backward, on_before_optimizer_step, optimizer_step, configure_gradient_clipping, on_before_zero_grad, training_step, training_step_end
+   * - on_after_backward, on_before_backward, on_before_optimizer_step, optimizer_step, configure_gradient_clipping, on_before_zero_grad, training_step
      - True
      - False
-   * - training_epoch_end, test_epoch_end, test_step, test_step_end, validation_epoch_end, validation_step, validation_step_end
+   * - test_step, validation_step
      - False
      - True
 

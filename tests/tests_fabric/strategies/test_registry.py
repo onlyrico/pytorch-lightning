@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from lightning_fabric.strategies import STRATEGY_REGISTRY
-from lightning_fabric.utilities.imports import _TORCH_GREATER_EQUAL_1_12
+from lightning.fabric.strategies import STRATEGY_REGISTRY
 
 
 def test_strategy_registry_with_new_strategy():
     class TestStrategy:
-
         strategy_name = "test_strategy"
 
         def __init__(self, param1, param2):
@@ -43,24 +41,25 @@ def test_strategy_registry_with_new_strategy():
 
 def test_available_strategies_in_registry():
     expected = {
-        "ddp_sharded",
         "ddp",
+        "ddp_find_unused_parameters_true",
         "deepspeed",
         "deepspeed_stage_1",
+        "deepspeed_stage_1_offload",
         "deepspeed_stage_2",
         "deepspeed_stage_2_offload",
         "deepspeed_stage_3",
         "deepspeed_stage_3_offload",
         "deepspeed_stage_3_offload_nvme",
-        "ddp_sharded_spawn",
         "ddp_spawn",
         "ddp_fork",
         "ddp_notebook",
-        "single_tpu",
-        "tpu_spawn",
+        "single_tpu",  # legacy
+        "single_xla",
         "xla",
+        "xla_fsdp",
         "dp",
+        "fsdp",
+        "fsdp_cpu_offload",
     }
-    if _TORCH_GREATER_EQUAL_1_12:
-        expected |= {"fsdp", "fsdp_full_shard_offload"}
     assert set(STRATEGY_REGISTRY.available_strategies()) == expected

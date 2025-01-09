@@ -9,19 +9,13 @@ Lightning in 15 minutes
 
 PyTorch Lightning is the deep learning framework with "batteries included" for professional AI researchers and machine learning engineers who need maximal flexibility while super-charging performance at scale.
 
-.. join_slack::
-   :align: left
-   :margin: 20
-
-
 Lightning organizes PyTorch code to remove boilerplate and unlock scalability.
 
-.. raw:: html
-
-    <video width="100%" max-width="800px" controls autoplay muted playsinline
-    src="https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/pl_docs/pl_docs_animation_final.m4v"></video>
-
-|
+.. video:: https://pl-public-data.s3.amazonaws.com/assets_lightning/pl_readme_gif_2_0.mp4
+    :width: 800
+    :autoplay:
+    :loop:
+    :muted:
 
 By organizing PyTorch code, lightning enables:
 
@@ -81,7 +75,7 @@ For `pip <https://pypi.org/project/pytorch-lightning/>`_ users
 
 .. code-block:: bash
 
-    pip install pytorch-lightning
+    pip install lightning
 
 .. raw:: html
 
@@ -92,7 +86,7 @@ For `conda <https://anaconda.org/conda-forge/pytorch-lightning>`_ users
 
 .. code-block:: bash
 
-    conda install pytorch-lightning -c conda-forge
+    conda install lightning -c conda-forge
 
 .. raw:: html
 
@@ -118,14 +112,15 @@ A LightningModule enables your PyTorch nn.Module to play together in complex way
     from torch import optim, nn, utils, Tensor
     from torchvision.datasets import MNIST
     from torchvision.transforms import ToTensor
-    import pytorch_lightning as pl
+    import lightning as L
 
     # define any number of nn.Modules (or use your current ones)
     encoder = nn.Sequential(nn.Linear(28 * 28, 64), nn.ReLU(), nn.Linear(64, 3))
     decoder = nn.Sequential(nn.Linear(3, 64), nn.ReLU(), nn.Linear(64, 28 * 28))
 
+
     # define the LightningModule
-    class LitAutoEncoder(pl.LightningModule):
+    class LitAutoEncoder(L.LightningModule):
         def __init__(self, encoder, decoder):
             super().__init__()
             self.encoder = encoder
@@ -134,12 +129,12 @@ A LightningModule enables your PyTorch nn.Module to play together in complex way
         def training_step(self, batch, batch_idx):
             # training_step defines the train loop.
             # it is independent of forward
-            x, y = batch
+            x, _ = batch
             x = x.view(x.size(0), -1)
             z = self.encoder(x)
             x_hat = self.decoder(z)
             loss = nn.functional.mse_loss(x_hat, x)
-            # Logging to TensorBoard by default
+            # Logging to TensorBoard (if installed) by default
             self.log("train_loss", loss)
             return loss
 
@@ -176,7 +171,7 @@ The Lightning :doc:`Trainer <../common/trainer>` "mixes" any :doc:`LightningModu
 .. code-block:: python
 
     # train the model (hint: here are some helpful Trainer arguments for rapid idea iteration)
-    trainer = pl.Trainer(limit_train_batches=100, max_epochs=1)
+    trainer = L.Trainer(limit_train_batches=100, max_epochs=1)
     trainer.fit(model=autoencoder, train_dataloaders=train_loader)
 
 The Lightning :doc:`Trainer <../common/trainer>` automates `40+ tricks <../common/trainer.html#trainer-flags>`_ including:
@@ -209,7 +204,7 @@ Once you've trained the model you can export to onnx, torchscript and put it int
     encoder.eval()
 
     # embed 4 fake images!
-    fake_image_batch = Tensor(4, 28 * 28)
+    fake_image_batch = torch.rand(4, 28 * 28, device=autoencoder.device)
     embeddings = encoder(fake_image_batch)
     print("⚡" * 20, "\nPredictions (4 image embeddings):\n", embeddings, "\n", "⚡" * 20)
 
@@ -218,7 +213,7 @@ Once you've trained the model you can export to onnx, torchscript and put it int
 *********************
 6: Visualize training
 *********************
-Lightning comes with a *lot* of batteries included. A helpful one is Tensorboard for visualizing experiments.
+If you have tensorboard installed, you can use it for visualizing experiments.
 
 Run this on your commandline and open your browser to **http://localhost:6006/**
 
@@ -236,13 +231,13 @@ Enable advanced training features using Trainer arguments. These are state-of-th
 .. code::
 
    # train on 4 GPUs
-   trainer = Trainer(
+   trainer = L.Trainer(
        devices=4,
        accelerator="gpu",
     )
 
    # train 1TB+ parameter models with Deepspeed/fsdp
-   trainer = Trainer(
+   trainer = L.Trainer(
        devices=4,
        accelerator="gpu",
        strategy="deepspeed_stage_2",
@@ -250,14 +245,14 @@ Enable advanced training features using Trainer arguments. These are state-of-th
     )
 
    # 20+ helpful flags for rapid idea iteration
-   trainer = Trainer(
+   trainer = L.Trainer(
        max_epochs=10,
        min_epochs=5,
        overfit_batches=1
     )
 
    # access the latest state of the art techniques
-   trainer = Trainer(callbacks=[StochasticWeightAveraging(...)])
+   trainer = L.Trainer(callbacks=[StochasticWeightAveraging(...)])
 
 ----
 
@@ -281,8 +276,8 @@ Inject custom code anywhere in the Training loop using any of the 20+ methods (:
 
 .. testcode::
 
-    class LitAutoEncoder(pl.LightningModule):
-        def backward(self, loss, optimizer, optimizer_idx):
+    class LitAutoEncoder(L.LightningModule):
+        def backward(self, loss):
             loss.backward()
 
 ----
@@ -290,10 +285,11 @@ Inject custom code anywhere in the Training loop using any of the 20+ methods (:
 Extend the Trainer
 ==================
 
-.. raw:: html
-
-    <video width="100%" max-width="800px" controls autoplay muted playsinline
-    src="https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/cb.m4v"></video>
+.. video:: https://pl-public-data.s3.amazonaws.com/assets_lightning/cb.mp4
+    :width: 600
+    :autoplay:
+    :loop:
+    :muted:
 
 If you have multiple lines of code with similar functionalities, you can use callbacks to easily group them together and toggle all of those lines on or off at the same time.
 
@@ -306,7 +302,7 @@ If you have multiple lines of code with similar functionalities, you can use cal
 Use a raw PyTorch loop
 ======================
 
-For certain types of work at the bleeding-edge of research, Lightning offers experts full control of their training loops in various ways.
+For certain types of work at the bleeding-edge of research, Lightning offers experts full control of optimization or the training loop in various ways.
 
 .. raw:: html
 
@@ -321,24 +317,6 @@ For certain types of work at the bleeding-edge of research, Lightning offers exp
    :col_css: col-md-4
    :image_center: https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/manual_opt.png
    :button_link: ../model/build_model_advanced.html#manual-optimization
-   :image_height: 220px
-   :height: 320
-
-.. displayitem::
-   :header: Lightning Fabric
-   :description: Full control over loop for migrating complex PyTorch projects.
-   :col_css: col-md-4
-   :image_center: https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/lite.png
-   :button_link: ../fabric/fabric.html
-   :image_height: 220px
-   :height: 320
-
-.. displayitem::
-   :header: Loops
-   :description: Enable meta-learning, reinforcement learning, GANs with full control.
-   :col_css: col-md-4
-   :image_center: https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/loops.png
-   :button_link: ../extensions/loops.html
    :image_height: 220px
    :height: 320
 
@@ -378,14 +356,6 @@ Depending on your use case, you might want to check one of these out next.
    :button_link: ../tutorials.html
    :height: 180
    :tag: basic
-
-.. displayitem::
-   :header: I need my raw PyTorch Loop
-   :description: Expert-level control for researchers working on the bleeding-edge
-   :col_css: col-md-3
-   :button_link: ../fabric/fabric.html
-   :height: 180
-   :tag: expert
 
 .. displayitem::
    :header: Deploy your model

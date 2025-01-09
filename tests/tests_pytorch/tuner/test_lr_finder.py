@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,32 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import math
 import os
 from copy import deepcopy
+from typing import Any
 from unittest import mock
 
 import pytest
 import torch
 from lightning_utilities.test.warning import no_warning_call
 
-from pytorch_lightning import seed_everything, Trainer
-from pytorch_lightning.callbacks.lr_finder import LearningRateFinder
-from pytorch_lightning.demos.boring_classes import BoringModel
-from pytorch_lightning.tuner.lr_finder import _LRFinder
-from pytorch_lightning.utilities.exceptions import MisconfigurationException
+from lightning.pytorch import Trainer, seed_everything
+from lightning.pytorch.callbacks.lr_finder import LearningRateFinder
+from lightning.pytorch.demos.boring_classes import BoringModel
+from lightning.pytorch.tuner.lr_finder import _LRFinder
+from lightning.pytorch.tuner.tuning import Tuner
+from lightning.pytorch.utilities.exceptions import MisconfigurationException
+from lightning.pytorch.utilities.types import STEP_OUTPUT
 from tests_pytorch.helpers.datamodules import ClassifDataModule
 from tests_pytorch.helpers.runif import RunIf
 from tests_pytorch.helpers.simple_models import ClassificationModel
 from tests_pytorch.helpers.utils import getattr_recursive
 
 
-def test_error_on_more_than_1_optimizer(tmpdir):
+def test_error_with_multiple_optimizers(tmp_path):
     """Check that error is thrown when more than 1 optimizer is passed."""
 
     class CustomBoringModel(BoringModel):
         def __init__(self, lr):
             super().__init__()
             self.save_hyperparameters()
+            self.automatic_optimization = False
 
         def configure_optimizers(self):
             optimizer1 = torch.optim.SGD(self.parameters(), lr=self.hparams.lr)
@@ -46,46 +51,46 @@ def test_error_on_more_than_1_optimizer(tmpdir):
 
     model = CustomBoringModel(lr=1e-2)
 
-    # logger file to get meta
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=1)
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=1)
+    tuner = Tuner(trainer)
 
     with pytest.raises(MisconfigurationException, match="only works with single optimizer"):
-        trainer.tuner.lr_find(model)
+        tuner.lr_find(model)
 
 
-def test_model_reset_correctly(tmpdir):
-    """Check that model weights are correctly reset after lr_find()"""
-
+def test_model_reset_correctly(tmp_path):
+    """Check that model weights are correctly reset after _lr_find()"""
     model = BoringModel()
+    model.lr = 0.1
 
     # logger file to get meta
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=1)
-
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=1)
+    tuner = Tuner(trainer)
     before_state_dict = deepcopy(model.state_dict())
 
-    trainer.tuner.lr_find(model, num_training=5)
+    tuner.lr_find(model, num_training=5)
 
     after_state_dict = model.state_dict()
 
-    for key in before_state_dict.keys():
-        assert torch.all(
-            torch.eq(before_state_dict[key], after_state_dict[key])
-        ), "Model was not reset correctly after learning rate finder"
+    for key in before_state_dict:
+        assert torch.all(torch.eq(before_state_dict[key], after_state_dict[key])), (
+            "Model was not reset correctly after learning rate finder"
+        )
 
-    assert not any(f for f in os.listdir(tmpdir) if f.startswith(".lr_find"))
+    assert not any(f for f in os.listdir(tmp_path) if f.startswith(".lr_find"))
 
 
-def test_trainer_reset_correctly(tmpdir):
+def test_trainer_reset_correctly(tmp_path):
     """Check that all trainer parameters are reset correctly after lr_find()"""
-
     model = BoringModel()
+    model.lr = 0.1
 
     # logger file to get meta
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=1)
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=1)
+    tuner = Tuner(trainer)
 
     changed_attributes = [
         "accumulate_grad_batches",
-        "auto_lr_find",
         "callbacks",
         "checkpoint_callback",
         "current_epoch",
@@ -99,7 +104,7 @@ def test_trainer_reset_correctly(tmpdir):
     expected = {ca: getattr_recursive(trainer, ca) for ca in changed_attributes}
 
     with no_warning_call(UserWarning, match="Please add the following callbacks"):
-        trainer.tuner.lr_find(model, num_training=5)
+        tuner.lr_find(model, num_training=5)
 
     actual = {ca: getattr_recursive(trainer, ca) for ca in changed_attributes}
     assert actual == expected
@@ -107,8 +112,8 @@ def test_trainer_reset_correctly(tmpdir):
 
 
 @pytest.mark.parametrize("use_hparams", [False, True])
-def test_trainer_arg_bool(tmpdir, use_hparams):
-    """Test that setting trainer arg to bool works."""
+def test_tuner_lr_find(tmp_path, use_hparams):
+    """Test that lr_find updates the learning rate attribute."""
     seed_everything(1)
 
     class CustomBoringModel(BoringModel):
@@ -118,25 +123,22 @@ def test_trainer_arg_bool(tmpdir, use_hparams):
             self.lr = lr
 
         def configure_optimizers(self):
-            optimizer = torch.optim.SGD(self.parameters(), lr=self.hparams.lr if use_hparams else self.lr)
-            return optimizer
+            return torch.optim.SGD(self.parameters(), lr=self.hparams.lr if use_hparams else self.lr)
 
     before_lr = 1e-2
     model = CustomBoringModel(lr=before_lr)
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=2, auto_lr_find=True)
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=2)
+    tuner = Tuner(trainer)
+    tuner.lr_find(model, update_attr=True)
 
-    trainer.tune(model)
-    if use_hparams:
-        after_lr = model.hparams.lr
-    else:
-        after_lr = model.lr
+    after_lr = model.hparams.lr if use_hparams else model.lr
 
     assert after_lr is not None
     assert before_lr != after_lr, "Learning rate was not altered after running learning rate finder"
 
 
 @pytest.mark.parametrize("use_hparams", [False, True])
-def test_trainer_arg_str(tmpdir, use_hparams):
+def test_trainer_arg_str(tmp_path, use_hparams):
     """Test that setting trainer arg to string works."""
     seed_everything(1)
 
@@ -147,27 +149,21 @@ def test_trainer_arg_str(tmpdir, use_hparams):
             self.my_fancy_lr = my_fancy_lr
 
         def configure_optimizers(self):
-            optimizer = torch.optim.SGD(
-                self.parameters(), lr=self.hparams.my_fancy_lr if use_hparams else self.my_fancy_lr
-            )
-            return optimizer
+            return torch.optim.SGD(self.parameters(), lr=self.hparams.my_fancy_lr if use_hparams else self.my_fancy_lr)
 
     before_lr = 1e-2
     model = CustomBoringModel(my_fancy_lr=before_lr)
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=2, auto_lr_find="my_fancy_lr")
-
-    trainer.tune(model)
-    if use_hparams:
-        after_lr = model.hparams.my_fancy_lr
-    else:
-        after_lr = model.my_fancy_lr
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=2)
+    tuner = Tuner(trainer)
+    tuner.lr_find(model, update_attr=True, attr_name="my_fancy_lr")
+    after_lr = model.hparams.my_fancy_lr if use_hparams else model.my_fancy_lr
 
     assert after_lr is not None
     assert before_lr != after_lr, "Learning rate was not altered after running learning rate finder"
 
 
 @pytest.mark.parametrize("opt", ["Adam", "Adagrad"])
-def test_call_to_trainer_method(tmpdir, opt):
+def test_call_to_trainer_method(tmp_path, opt):
     """Test that directly calling the trainer method works."""
     seed_everything(1)
 
@@ -177,22 +173,22 @@ def test_call_to_trainer_method(tmpdir, opt):
             self.save_hyperparameters()
 
         def configure_optimizers(self):
-            optimizer = (
+            return (
                 torch.optim.Adagrad(self.parameters(), lr=self.hparams.lr)
                 if opt == "Adagrad"
                 else torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
             )
-            return optimizer
 
     before_lr = 1e-2
     model = CustomBoringModel(1e-2)
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=2)
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=2)
 
-    lrfinder = trainer.tuner.lr_find(model, mode="linear")
-    after_lr = lrfinder.suggestion()
+    tuner = Tuner(trainer)
+    lr_finder = tuner.lr_find(model, mode="linear")
+    after_lr = lr_finder.suggestion()
     assert after_lr is not None
     model.hparams.lr = after_lr
-    trainer.tune(model)
+    tuner.lr_find(model, update_attr=True)
 
     assert after_lr is not None
     assert before_lr != after_lr, "Learning rate was not altered after running learning rate finder"
@@ -200,7 +196,7 @@ def test_call_to_trainer_method(tmpdir, opt):
 
 @RunIf(sklearn=True)
 @mock.patch.dict(os.environ, os.environ.copy(), clear=True)
-def test_datamodule_parameter(tmpdir):
+def test_datamodule_parameter(tmp_path):
     """Test that the datamodule parameter works."""
     seed_everything(1)
 
@@ -209,19 +205,19 @@ def test_datamodule_parameter(tmpdir):
 
     before_lr = model.lr
     # logger file to get meta
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=2)
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=2)
 
-    lrfinder = trainer.tuner.lr_find(model, datamodule=dm)
-    after_lr = lrfinder.suggestion()
+    tuner = Tuner(trainer)
+    lr_finder = tuner.lr_find(model, datamodule=dm)
+    after_lr = lr_finder.suggestion()
     model.lr = after_lr
 
     assert after_lr is not None
     assert before_lr != after_lr, "Learning rate was not altered after running learning rate finder"
 
 
-def test_accumulation_and_early_stopping(tmpdir):
-    """Test that early stopping of learning rate finder works, and that accumulation also works for this
-    feature."""
+def test_accumulation_and_early_stopping(tmp_path):
+    """Test that early stopping of learning rate finder works, and that accumulation also works for this feature."""
     seed_everything(1)
 
     class TestModel(BoringModel):
@@ -230,15 +226,16 @@ def test_accumulation_and_early_stopping(tmpdir):
             self.lr = 1e-3
 
     model = TestModel()
-    trainer = Trainer(default_root_dir=tmpdir, accumulate_grad_batches=2)
-    lrfinder = trainer.tuner.lr_find(model, early_stop_threshold=None)
+    trainer = Trainer(default_root_dir=tmp_path, accumulate_grad_batches=2)
+    tuner = Tuner(trainer)
+    lr_finder = tuner.lr_find(model, early_stop_threshold=None)
 
-    assert lrfinder.suggestion() != 1e-3
-    assert len(lrfinder.results["lr"]) == 100
-    assert lrfinder._total_batch_idx == 199
+    assert lr_finder.suggestion() != 1e-3
+    assert len(lr_finder.results["lr"]) == len(lr_finder.results["loss"]) == 100
+    assert lr_finder._total_batch_idx == 199
 
 
-def test_suggestion_parameters_work(tmpdir):
+def test_suggestion_parameters_work(tmp_path):
     """Test that default skipping does not alter results in basic case."""
     seed_everything(1)
 
@@ -248,23 +245,22 @@ def test_suggestion_parameters_work(tmpdir):
             self.lr = lr
 
         def configure_optimizers(self):
-            optimizer = torch.optim.SGD(self.parameters(), lr=self.lr)
-            return optimizer
+            return torch.optim.SGD(self.parameters(), lr=self.lr)
 
     # logger file to get meta
     model = CustomBoringModel(lr=1e-2)
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=3)
-
-    lrfinder = trainer.tuner.lr_find(model)
-    lr1 = lrfinder.suggestion(skip_begin=10)  # default
-    lr2 = lrfinder.suggestion(skip_begin=70)  # way too high, should have an impact
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=3)
+    tuner = Tuner(trainer)
+    lr_finder = tuner.lr_find(model)
+    lr1 = lr_finder.suggestion(skip_begin=10)  # default
+    lr2 = lr_finder.suggestion(skip_begin=70)  # way too high, should have an impact
 
     assert lr1 is not None
     assert lr2 is not None
     assert lr1 != lr2, "Skipping parameter did not influence learning rate"
 
 
-def test_suggestion_with_non_finite_values(tmpdir):
+def test_suggestion_with_non_finite_values(tmp_path):
     """Test that non-finite values does not alter results."""
     seed_everything(1)
 
@@ -274,53 +270,31 @@ def test_suggestion_with_non_finite_values(tmpdir):
             self.lr = lr
 
         def configure_optimizers(self):
-            optimizer = torch.optim.SGD(self.parameters(), lr=self.lr)
-            return optimizer
+            return torch.optim.SGD(self.parameters(), lr=self.lr)
 
     model = CustomBoringModel(lr=1e-2)
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=3)
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=3)
+    tuner = Tuner(trainer)
+    lr_finder = tuner.lr_find(model)
 
-    lrfinder = trainer.tuner.lr_find(model)
-    before_lr = lrfinder.suggestion()
-    lrfinder.results["loss"][-1] = float("nan")
-    after_lr = lrfinder.suggestion()
+    before_lr = lr_finder.suggestion()
+    lr_finder.results["loss"][-1] = float("nan")
+    after_lr = lr_finder.suggestion()
 
     assert before_lr is not None
     assert after_lr is not None
     assert before_lr == after_lr, "Learning rate was altered because of non-finite loss values"
 
 
-def test_lr_finder_fails_fast_on_bad_config(tmpdir):
+def test_lr_finder_fails_fast_on_bad_config(tmp_path):
     """Test that tune fails if the model does not have a lr BEFORE running lr find."""
-    trainer = Trainer(default_root_dir=tmpdir, max_steps=2, auto_lr_find=True)
-    with pytest.raises(MisconfigurationException, match="should have one of these fields"):
-        trainer.tune(BoringModel())
+    trainer = Trainer(default_root_dir=tmp_path, max_steps=2)
+    tuner = Tuner(trainer)
+    with pytest.raises(AttributeError, match="should have one of these fields"):
+        tuner.lr_find(BoringModel(), update_attr=True)
 
 
-def test_lr_find_with_bs_scale(tmpdir):
-    """Test that lr_find runs with batch_size_scaling."""
-    seed_everything(1)
-
-    class BoringModelTune(BoringModel):
-        def __init__(self, learning_rate=0.1, batch_size=2):
-            super().__init__()
-            self.save_hyperparameters()
-
-    model = BoringModelTune()
-    before_lr = model.hparams.learning_rate
-
-    # logger file to get meta
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=3, auto_lr_find=True, auto_scale_batch_size=True)
-    result = trainer.tune(model)
-    bs = result["scale_batch_size"]
-    after_lr = result["lr_find"].suggestion()
-
-    assert after_lr is not None
-    assert after_lr != before_lr
-    assert isinstance(bs, int)
-
-
-def test_lr_candidates_between_min_and_max(tmpdir):
+def test_lr_candidates_between_min_and_max(tmp_path):
     """Test that learning rate candidates are between min_lr and max_lr."""
     seed_everything(1)
 
@@ -330,16 +304,17 @@ def test_lr_candidates_between_min_and_max(tmpdir):
             self.save_hyperparameters()
 
     model = TestModel()
-    trainer = Trainer(default_root_dir=tmpdir)
+    trainer = Trainer(default_root_dir=tmp_path)
 
     lr_min = 1e-8
     lr_max = 1.0
-    lr_finder = trainer.tuner.lr_find(model, max_lr=lr_min, min_lr=lr_max, num_training=3)
+    tuner = Tuner(trainer)
+    lr_finder = tuner.lr_find(model, max_lr=lr_min, min_lr=lr_max, num_training=3)
     lr_candidates = lr_finder.results["lr"]
     assert all(lr_min <= lr <= lr_max for lr in lr_candidates)
 
 
-def test_lr_finder_ends_before_num_training(tmpdir):
+def test_lr_finder_ends_before_num_training(tmp_path):
     """Tests learning rate finder ends before `num_training` steps."""
 
     class TestModel(BoringModel):
@@ -347,23 +322,24 @@ def test_lr_finder_ends_before_num_training(tmpdir):
             super().__init__()
             self.save_hyperparameters()
 
-        def training_step_end(self, outputs):
+        def on_before_optimizer_step(self, optimizer):
             assert self.global_step < num_training
-            return outputs
 
     model = TestModel()
-    trainer = Trainer(default_root_dir=tmpdir)
+    trainer = Trainer(default_root_dir=tmp_path)
+    tuner = Tuner(trainer)
     num_training = 3
-    trainer.tuner.lr_find(model=model, num_training=num_training)
+    tuner.lr_find(model=model, num_training=num_training)
 
 
-def test_multiple_lr_find_calls_gives_same_results(tmpdir):
+def test_multiple_lr_find_calls_gives_same_results(tmp_path):
     """Tests that lr_finder gives same results if called multiple times."""
     seed_everything(1)
     model = BoringModel()
+    model.lr = 0.1
 
     trainer = Trainer(
-        default_root_dir=tmpdir,
+        default_root_dir=tmp_path,
         max_epochs=2,
         limit_train_batches=10,
         limit_val_batches=2,
@@ -371,17 +347,18 @@ def test_multiple_lr_find_calls_gives_same_results(tmpdir):
         enable_model_summary=False,
         enable_checkpointing=False,
     )
-    all_res = [trainer.tuner.lr_find(model).results for _ in range(3)]
+    tuner = Tuner(trainer)
+    all_res = [tuner.lr_find(model).results for _ in range(3)]
 
     assert all(
         all_res[0][k] == curr_lr_finder[k] and len(curr_lr_finder[k]) > 10
         for curr_lr_finder in all_res[1:]
-        for k in all_res[0].keys()
+        for k in all_res[0]
     )
 
 
 @pytest.mark.parametrize(
-    "skip_begin,skip_end,losses,expected_error",
+    ("skip_begin", "skip_end", "losses", "expected_error"),
     [
         (0, 0, [], True),
         (10, 1, [], True),
@@ -417,7 +394,7 @@ def test_suggestion_not_enough_finite_points(losses, skip_begin, skip_end, expec
             assert lr is not None
 
 
-def test_lr_attribute_when_suggestion_invalid(tmpdir):
+def test_lr_attribute_when_suggestion_invalid(tmp_path):
     """Tests learning rate finder ends before `num_training` steps."""
 
     class TestModel(BoringModel):
@@ -426,25 +403,15 @@ def test_lr_attribute_when_suggestion_invalid(tmpdir):
             self.learning_rate = 0.123
 
     model = TestModel()
-    trainer = Trainer(default_root_dir=tmpdir)
-    lr_finder = trainer.tuner.lr_find(model=model, update_attr=True, num_training=1)  # force insufficient data points
+    trainer = Trainer(default_root_dir=tmp_path)
+    tuner = Tuner(trainer)
+    lr_finder = tuner.lr_find(model=model, update_attr=True, num_training=1)  # force insufficient data points
     assert lr_finder.suggestion() is None
     assert model.learning_rate == 0.123  # must remain unchanged because suggestion is not possible
 
 
-def test_if_lr_finder_callback_already_configured():
-    """Test that an error is raised if `LearningRateFinder` is already configured inside `Tuner`"""
-    cb = LearningRateFinder()
-    trainer = Trainer(auto_lr_find=True, callbacks=cb)
-    model = BoringModel()
-
-    with pytest.raises(MisconfigurationException, match="Trainer is already configured with a `LearningRateFinder`"):
-        trainer.tune(model)
-
-
-def test_lr_finder_callback_restarting(tmpdir):
+def test_lr_finder_callback_restarting(tmp_path):
     """Test that `LearningRateFinder` does not set restarting=True when loading checkpoint."""
-
     num_lr_steps = 100
 
     class MyBoringModel(BoringModel):
@@ -467,6 +434,7 @@ def test_lr_finder_callback_restarting(tmpdir):
             super().lr_find(trainer, pl_module)
             pl_module._expected_max_steps = None
             assert not trainer.fit_loop.restarting
+            assert not trainer.fit_loop.epoch_loop.restarting
 
         def on_train_epoch_start(self, trainer, pl_module):
             if trainer.current_epoch in self.milestones or trainer.current_epoch == 0:
@@ -474,7 +442,7 @@ def test_lr_finder_callback_restarting(tmpdir):
 
     model = MyBoringModel()
     trainer = Trainer(
-        default_root_dir=tmpdir,
+        default_root_dir=tmp_path,
         max_epochs=3,
         callbacks=[
             CustomLearningRateFinder(early_stop_threshold=None, update_attr=True, num_training_steps=num_lr_steps)
@@ -491,7 +459,7 @@ def test_lr_finder_callback_restarting(tmpdir):
 
 @mock.patch.dict(os.environ, os.environ.copy(), clear=True)
 @RunIf(standalone=True)
-def test_lr_finder_with_ddp(tmpdir):
+def test_lr_finder_with_ddp(tmp_path):
     seed_everything(7)
 
     init_lr = 1e-4
@@ -499,15 +467,74 @@ def test_lr_finder_with_ddp(tmpdir):
     model = ClassificationModel(lr=init_lr)
 
     trainer = Trainer(
-        default_root_dir=tmpdir,
+        default_root_dir=tmp_path,
         max_epochs=1,
         strategy="ddp",
         devices=2,
         accelerator="cpu",
     )
 
-    trainer.tuner.lr_find(model, datamodule=dm, update_attr=True, num_training=20)
+    tuner = Tuner(trainer)
+    tuner.lr_find(model, datamodule=dm, update_attr=True, num_training=20)
     lr = trainer.lightning_module.lr
     lr = trainer.strategy.broadcast(lr)
     assert trainer.lightning_module.lr == lr
     assert lr != init_lr
+
+
+def test_lr_finder_callback_val_batches(tmp_path):
+    """Test that `LearningRateFinder` does not limit the number of val batches during training."""
+
+    class CustomBoringModel(BoringModel):
+        def __init__(self, lr):
+            super().__init__()
+            self.lr = lr
+
+        def configure_optimizers(self):
+            return torch.optim.SGD(self.parameters(), lr=self.lr)
+
+    num_lr_tuner_training_steps = 5
+    model = CustomBoringModel(0.1)
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        num_sanity_val_steps=0,
+        max_epochs=1,
+        enable_model_summary=False,
+        callbacks=[LearningRateFinder(num_training_steps=num_lr_tuner_training_steps)],
+    )
+    trainer.fit(model)
+
+    assert trainer.num_val_batches[0] == len(trainer.val_dataloaders)
+    assert trainer.num_val_batches[0] != num_lr_tuner_training_steps
+
+
+def test_lr_finder_training_step_none_output(tmp_path):
+    # add some nans into the skipped steps (first 10) but also into the steps used to compute the lr
+    none_steps = [5, 12, 17]
+
+    class CustomBoringModel(BoringModel):
+        def __init__(self):
+            super().__init__()
+            self.lr = 0.123
+
+        def training_step(self, batch: Any, batch_idx: int) -> STEP_OUTPUT:
+            if self.trainer.global_step in none_steps:
+                return None
+
+            return super().training_step(batch, batch_idx)
+
+    seed_everything(1)
+    model = CustomBoringModel()
+
+    trainer = Trainer(default_root_dir=tmp_path)
+
+    tuner = Tuner(trainer)
+    # restrict number of steps for faster test execution
+    # and disable early stopping to easily check expected number of lrs and losses
+    lr_finder = tuner.lr_find(model=model, update_attr=True, num_training=20, early_stop_threshold=None)
+    assert len(lr_finder.results["lr"]) == len(lr_finder.results["loss"]) == 20
+    assert torch.isnan(torch.tensor(lr_finder.results["loss"])[none_steps]).all()
+
+    suggested_lr = lr_finder.suggestion()
+    assert math.isfinite(suggested_lr)
+    assert math.isclose(model.lr, suggested_lr)

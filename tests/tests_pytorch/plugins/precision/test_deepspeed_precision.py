@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,34 +11,65 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from unittest import mock
 
 import pytest
+import torch
 
-from pytorch_lightning.plugins.precision.deepspeed import DeepSpeedPrecisionPlugin
-from pytorch_lightning.utilities.exceptions import MisconfigurationException
+from lightning.pytorch.plugins.precision.deepspeed import DeepSpeedPrecision
 
 
 def test_invalid_precision_with_deepspeed_precision():
-    with pytest.deprecated_call(match=r"amp_type='native'\)` been deprecated in v1.9.0"), pytest.raises(
-        ValueError, match="is not supported. `precision` must be one of"
-    ):
-        DeepSpeedPrecisionPlugin(precision=64, amp_type="native")
+    with pytest.raises(ValueError, match="is not supported. `precision` must be one of"):
+        DeepSpeedPrecision(precision="64-true")
 
 
-def test_deepspeed_precision_apex_not_installed(monkeypatch):
-    import pytorch_lightning.plugins.precision.deepspeed as deepspeed_apex
+@pytest.mark.parametrize(
+    ("precision", "expected_dtype"),
+    [
+        ("32-true", torch.float32),
+        ("bf16-mixed", torch.bfloat16),
+        ("16-mixed", torch.float16),
+        ("bf16-true", torch.bfloat16),
+        ("16-true", torch.float16),
+    ],
+)
+def test_selected_dtype(precision, expected_dtype):
+    plugin = DeepSpeedPrecision(precision=precision)
+    assert plugin.precision == precision
+    assert plugin._desired_dtype == expected_dtype
 
-    monkeypatch.setattr(deepspeed_apex, "_APEX_AVAILABLE", False)
-    with pytest.raises(
-        MisconfigurationException, match="You have asked for Apex AMP but `apex` is not installed."
-    ), pytest.deprecated_call(match="apex AMP implementation has been deprecated"):
-        DeepSpeedPrecisionPlugin(precision=16, amp_type="apex")
+
+@pytest.mark.parametrize(
+    ("precision", "expected_dtype"),
+    [
+        ("32-true", torch.float32),
+        ("bf16-mixed", torch.float32),
+        ("16-mixed", torch.float32),
+        ("bf16-true", torch.bfloat16),
+        ("16-true", torch.float16),
+    ],
+)
+def test_module_init_context(precision, expected_dtype):
+    plugin = DeepSpeedPrecision(precision=precision)
+    with plugin.module_init_context():
+        model = torch.nn.Linear(2, 2)
+        assert torch.get_default_dtype() == expected_dtype
+    assert model.weight.dtype == expected_dtype
 
 
-@mock.patch("pytorch_lightning.plugins.precision.deepspeed._APEX_AVAILABLE", return_value=True)
-def test_deepspeed_precision_apex_default_level(_):
-    with pytest.deprecated_call(match="apex AMP implementation has been deprecated"):
-        precision_plugin = DeepSpeedPrecisionPlugin(precision=16, amp_type="apex")
-    assert isinstance(precision_plugin, DeepSpeedPrecisionPlugin)
-    assert precision_plugin.amp_level == "O2"
+@pytest.mark.parametrize(
+    ("precision", "expected_dtype"),
+    [
+        ("32-true", torch.float32),
+        ("bf16-mixed", torch.float32),
+        ("16-mixed", torch.float32),
+        ("bf16-true", torch.bfloat16),
+        ("16-true", torch.float16),
+    ],
+)
+def test_convert_module(precision, expected_dtype):
+    precision = DeepSpeedPrecision(precision=precision)
+    module = torch.nn.Linear(2, 2)
+    assert module.weight.dtype == module.bias.dtype == torch.float32
+    module = precision.convert_module(module)
+    assert module.weight.dtype == module.bias.dtype == expected_dtype

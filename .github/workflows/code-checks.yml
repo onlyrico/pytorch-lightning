@@ -6,11 +6,11 @@ on:
   pull_request:
     branches: [master, "release/*"]
     paths:
-      - ".actions/**"
+      - ".actions/*"
       - ".github/workflows/code-checks.yml"
       - "requirements/**"
       - "src/**"
-      - "pyproject.toml"   # includes mypy config
+      - "pyproject.toml" # includes mypy config
       - "!requirements/docs.txt"
       - "!requirements/*/docs.txt"
       - "!*.md"
@@ -18,49 +18,34 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref }}
-  cancel-in-progress: ${{ ! (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/release/')) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
     shell: bash
 
 jobs:
-
   mypy:
     runs-on: ubuntu-20.04
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/setup-python@v4
-      with:
-        python-version: '3.10.6'
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-    # Note: This uses an internal pip API and may not always work
-    # https://github.com/actions/cache/blob/master/examples.md#multiple-oss-in-a-workflow
-    - name: Cache pip
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('requirements/pytorch/base.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
+      - name: Mypy cache
+        uses: actions/cache@v4
+        with:
+          path: .mypy_cache
+          key: mypy-${{ hashFiles('requirements/typing.txt') }}
 
-    - name: Install dependencies
-      run: |
-        pip install mypy==0.982  # TODO: pull this verion deom requirements/test.txt
-        pip install torch==1.12 --find-links https://download.pytorch.org/whl/cpu/torch_stable.html
-        python ./requirements/pytorch/adjust-versions.py requirements/pytorch/extra.txt
-        # todo: adjust requirements for both code-bases
-        pip install \
-          -r requirements/fabric/base.txt \
-          -r requirements/pytorch/base.txt \
-          -r requirements/pytorch/extra.txt \
-          -r requirements/app/base.txt \
-          -r requirements/app/cloud.txt \
-          -r requirements/app/ui.txt \
-          --find-links https://download.pytorch.org/whl/cpu/torch_stable.html
-        pip list
+      - name: Install dependencies
+        env:
+          FREEZE_REQUIREMENTS: 1
+        timeout-minutes: 20
+        run: |
+          pip install -e '.[pytorch-all,fabric-all]' -r requirements/typing.txt
+          pip list
 
-    - name: Check typing
-      run: |
-        mkdir .mypy_cache
-        mypy
+      - name: Check typing
+        run: mypy

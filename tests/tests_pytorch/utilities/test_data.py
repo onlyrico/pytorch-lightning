@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -7,21 +8,21 @@ from lightning_utilities.test.warning import no_warning_call
 from torch import Tensor
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 
-from lightning_fabric.utilities.data import _replace_dunder_methods
-from pytorch_lightning import Trainer
-from pytorch_lightning.demos.boring_classes import BoringModel, RandomDataset, RandomIterableDataset
-from pytorch_lightning.overrides.distributed import IndexBatchSamplerWrapper
-from pytorch_lightning.trainer.states import RunningStage
-from pytorch_lightning.utilities.data import (
-    _dataloader_init_kwargs_resolve_sampler,
+from lightning.fabric.utilities.data import _replace_dunder_methods
+from lightning.fabric.utilities.warnings import PossibleUserWarning
+from lightning.pytorch import Trainer
+from lightning.pytorch.demos.boring_classes import RandomDataset, RandomIterableDataset
+from lightning.pytorch.overrides.distributed import _IndexBatchSamplerWrapper
+from lightning.pytorch.trainer.states import RunningStage
+from lightning.pytorch.utilities.data import (
     _get_dataloader_init_args_and_kwargs,
+    _is_dataloader_shuffled,
     _update_dataloader,
     extract_batch_size,
-    get_len,
     has_len_all_ranks,
     warning_cache,
 )
-from pytorch_lightning.utilities.exceptions import MisconfigurationException
+from lightning.pytorch.utilities.exceptions import MisconfigurationException
 
 
 def test_extract_batch_size():
@@ -92,23 +93,13 @@ def test_extract_batch_size():
     _check_error_raised(data)
 
 
-def test_get_len():
-    assert get_len(DataLoader(RandomDataset(1, 1))) == 1
-
-    value = get_len(DataLoader(RandomIterableDataset(1, 1)))
-
-    assert isinstance(value, float)
-    assert value == float("inf")
-
-
 def test_has_len_all_rank():
     trainer = Trainer(fast_dev_run=True)
-    model = BoringModel()
 
     with pytest.warns(UserWarning, match="Total length of `DataLoader` across ranks is zero."):
-        assert has_len_all_ranks(DataLoader(RandomDataset(0, 0)), trainer.strategy, model)
+        assert has_len_all_ranks(DataLoader(RandomDataset(0, 0)), trainer.strategy)
 
-    assert has_len_all_ranks(DataLoader(RandomDataset(1, 1)), trainer.strategy, model)
+    assert has_len_all_ranks(DataLoader(RandomDataset(1, 1)), trainer.strategy)
 
 
 def test_update_dataloader_typerror_custom_exception():
@@ -149,12 +140,13 @@ def test_update_dataloader_typerror_custom_exception():
 
 
 @pytest.mark.parametrize("predicting", [True, False])
-def test_custom_batch_sampler(predicting):
-    """This test asserts, that custom `BatchSampler`, with all the arguments, that are required in order to
-    properly reinstantiate the class, is invoked properly.
+def test_custom_torch_batch_sampler(predicting):
+    """This test asserts, that custom `BatchSampler`, with all the arguments, that are required in order to properly
+    reinstantiate the class, is invoked properly.
 
     It also asserts, that during the reinstantiation, the wrapper of `__init__` method is not present anymore, therefore
     not setting `__pl_saved_{args,arg_names,kwargs}` attributes.
+
     """
 
     class MyBatchSampler(BatchSampler):
@@ -179,15 +171,15 @@ def test_custom_batch_sampler(predicting):
     # updating dataloader, what happens on access of the dataloaders.
     # This should not fail, and would fail before support for custom args.
     dataloader = _update_dataloader(
-        dataloader, dataloader.sampler, mode=RunningStage.PREDICTING if predicting else None
+        dataloader, dataloader.sampler, mode=(RunningStage.PREDICTING if predicting else None)
     )
 
     # Assert the `__init__` method is not replaced anymore and everything is instantiated to correct types
     batch_sampler = dataloader.batch_sampler
 
     if predicting:
-        assert isinstance(batch_sampler, IndexBatchSamplerWrapper)
-        batch_sampler = batch_sampler._sampler
+        assert isinstance(batch_sampler, _IndexBatchSamplerWrapper)
+        batch_sampler = batch_sampler._batch_sampler
 
     assert isinstance(batch_sampler, MyBatchSampler)
     assert batch_sampler.drop_last == (not predicting)
@@ -199,9 +191,71 @@ def test_custom_batch_sampler(predicting):
     assert not hasattr(batch_sampler, "__pl_saved_default_kwargs")
 
 
+@pytest.mark.parametrize("predicting", [True, False])
+def test_custom_torch_batch_sampler_doppelganger(predicting):
+    """Test we can reinstantiate a sampler that mimics PyTorch's BatchSampler even if it does not inherit from it.
+
+    This is only possible if that sampler accepts the `batch_size` and `drop_last` arguments, and stores them
+    as attributes.
+
+    """
+
+    class BatchSamplerDoppelganger:
+        """A batch sampler that mimics `torch.utils.data.BatchSampler` but does not inherit from it."""
+
+        def __init__(self, sampler, batch_size, drop_last):
+            self.sampler = sampler
+            self.batch_size = batch_size
+            self.drop_last = drop_last
+
+        def __iter__(self):
+            while True:
+                yield [0, 1, 2, 3]
+
+        def __len__(self) -> int:
+            return 4
+
+    batch_sampler = BatchSamplerDoppelganger(sampler=Mock(), batch_size=2, drop_last=True)
+    dataloader = DataLoader(range(100), batch_sampler=batch_sampler)
+    new_sampler = Mock()
+    dataloader = _update_dataloader(
+        dataloader, sampler=new_sampler, mode=(RunningStage.PREDICTING if predicting else None)
+    )
+
+    batch_sampler = dataloader.batch_sampler
+
+    if predicting:
+        assert isinstance(batch_sampler, _IndexBatchSamplerWrapper)
+        batch_sampler = batch_sampler._batch_sampler
+
+    assert isinstance(batch_sampler, BatchSamplerDoppelganger)
+    assert batch_sampler.sampler == new_sampler
+    assert batch_sampler.drop_last == (not predicting)
+
+
+@pytest.mark.parametrize("predicting", [True, False])
+def test_custom_batch_sampler(predicting):
+    """Test that a custom (non-PyTorch) batch sampler requires the user to set `use_distributed_sampler=False`."""
+
+    class CustomBatchSampler:  # not inheriting from `BatchSampler`
+        def __iter__(self):
+            while True:
+                yield [0, 1, 2, 3]
+
+    batch_sampler = CustomBatchSampler()
+    dataloader = DataLoader(range(100), batch_sampler=batch_sampler)
+
+    if predicting:
+        with pytest.warns(PossibleUserWarning, match=r"Make sure your sampler is configured correctly to return all"):
+            _ = _update_dataloader(dataloader, sampler=Mock(), mode=RunningStage.PREDICTING)
+    else:
+        with pytest.raises(TypeError, match=r"can't inject a \(distributed\) sampler into your batch sampler"):
+            _ = _update_dataloader(dataloader, sampler=Mock(), mode=None)
+
+
 def test_custom_batch_sampler_no_drop_last():
-    """Tests whether appropriate warning is raised when the custom `BatchSampler` does not support `drop_last` and
-    we want to reset it."""
+    """Tests whether appropriate warning is raised when the custom `BatchSampler` does not support `drop_last` and we
+    want to reset it."""
 
     class MyBatchSampler(BatchSampler):
         # Custom batch sampler with extra argument, but without `drop_last`
@@ -224,12 +278,11 @@ def test_custom_batch_sampler_no_drop_last():
 
     # Assert that warning is raised
     with pytest.warns(UserWarning, match="drop_last=False"):
-        dataloader = _update_dataloader(dataloader, dataloader.sampler, mode=RunningStage.PREDICTING)
+        _ = _update_dataloader(dataloader, dataloader.sampler, mode=RunningStage.PREDICTING)
 
 
 def test_custom_batch_sampler_no_sampler():
-    """Tests whether appropriate error is raised when the custom `BatchSampler` does not support sampler
-    argument."""
+    """Tests whether appropriate error is raised when the custom `BatchSampler` does not support sampler argument."""
 
     class MyBatchSampler(BatchSampler):
         # Custom batch sampler, without sampler argument.
@@ -250,24 +303,32 @@ def test_custom_batch_sampler_no_sampler():
 
     # Assert that error is raised
     with pytest.raises(TypeError, match="sampler into the batch sampler"):
-        dataloader = _update_dataloader(dataloader, dataloader.sampler, mode=RunningStage.PREDICTING)
+        _ = _update_dataloader(dataloader, dataloader.sampler, mode=RunningStage.PREDICTING)
 
 
-def test_dataloader_disallow_batch_sampler():
-    dataset = RandomDataset(5, 100)
-    dataloader = DataLoader(dataset, batch_size=10)
+def test_batch_sampler_shuffle_setting():
+    """Test whether the `shuffle` state is correctly set in the `BatchSampler`."""
 
-    # This should not raise
-    _dataloader_init_kwargs_resolve_sampler(dataloader, dataloader.sampler, disallow_batch_sampler=True)
+    random_sampler = RandomSampler(range(10))
+    seq_sampler = SequentialSampler(range(10))
+    shuffled_dataloader = DataLoader(
+        range(10), batch_sampler=BatchSampler(random_sampler, batch_size=2, drop_last=False)
+    )
+    sequential_dataloader = DataLoader(
+        range(10), batch_sampler=BatchSampler(seq_sampler, batch_size=2, drop_last=False)
+    )
 
-    dataset = RandomDataset(5, 100)
-    sampler = SequentialSampler(dataset)
-    batch_sampler = BatchSampler(sampler, batch_size=10, drop_last=False)
-    dataloader = DataLoader(dataset, batch_sampler=batch_sampler)
+    # if batch_size is 1, the pytorch init a default SequentialSampler and set BatchSampler to None
+    single_dataloader = DataLoader(range(10), batch_sampler=BatchSampler(seq_sampler, batch_size=1, drop_last=False))
+    assert _is_dataloader_shuffled(shuffled_dataloader)
+    assert not _is_dataloader_shuffled(sequential_dataloader)
+    assert not _is_dataloader_shuffled(single_dataloader)
 
-    # this should raise - using batch sampler, that was not automatically instantiated by DataLoader
-    with pytest.raises(MisconfigurationException, match="when running on multiple IPU devices"):
-        _dataloader_init_kwargs_resolve_sampler(dataloader, dataloader.sampler, disallow_batch_sampler=True)
+    # if batch_size is 1, and no batch_sampler is set, the pytorch will set BatchSampler to None
+    single_dataloader = DataLoader(range(10), batch_size=1)
+    shuffled_single_dataloader = DataLoader(range(10), batch_size=1, shuffle=True)
+    assert not _is_dataloader_shuffled(single_dataloader)
+    assert _is_dataloader_shuffled(shuffled_single_dataloader)
 
 
 @pytest.mark.parametrize("mode", [RunningStage.TRAINING, RunningStage.PREDICTING, RunningStage.TESTING])
@@ -284,10 +345,10 @@ def test_dataloader_kwargs_replacement_with_iterable_dataset(mode):
 
 
 def test_dataloader_kwargs_replacement_with_array_default_comparison():
-    """Test that the comparison of attributes and default argument values works with arrays (truth value
-    ambiguous).
+    """Test that the comparison of attributes and default argument values works with arrays (truth value ambiguous).
 
     Regression test for issue #15408.
+
     """
     dataset = RandomDataset(5, 100)
 
@@ -297,5 +358,5 @@ def test_dataloader_kwargs_replacement_with_array_default_comparison():
             self.indices = np.random.rand(2, 2)  # an attribute we can't compare with ==
 
     dataloader = ArrayAttributeDataloader(dataset)
-    dl_args, dl_kwargs = _get_dataloader_init_args_and_kwargs(dataloader, dataloader.sampler)
+    _, dl_kwargs = _get_dataloader_init_args_and_kwargs(dataloader, dataloader.sampler)
     assert dl_kwargs["indices"] is dataloader.indices

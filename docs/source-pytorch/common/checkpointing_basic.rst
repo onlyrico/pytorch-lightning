@@ -20,6 +20,13 @@ PyTorch Lightning checkpoints are fully usable in plain PyTorch.
 
 ----
 
+.. important::
+
+   **Important Update: Deprecated Method**
+
+   Starting from PyTorch Lightning v1.0.0, the `resume_from_checkpoint` argument has been deprecated. To resume training from a checkpoint, use the `ckpt_path` argument in the `fit()` method.
+   Please update your code accordingly to avoid potential compatibility issues.
+
 ************************
 Contents of a checkpoint
 ************************
@@ -35,9 +42,9 @@ Inside a Lightning checkpoint you'll find:
 - State of all learning rate schedulers
 - State of all callbacks (for stateful callbacks)
 - State of datamodule (for stateful datamodules)
-- The hyperparameters used for that model if passed in as hparams (Argparse.Namespace)
-- The hyperparameters used for that datamodule if passed in as hparams (Argparse.Namespace)
-- State of Loops (if using Fault-Tolerant training)
+- The hyperparameters (init arguments) with which the model was created
+- The hyperparameters (init arguments) with which the datamodule was created
+- State of Loops
 
 ----
 
@@ -58,7 +65,9 @@ To change the checkpoint path use the `default_root_dir` argument:
     # saves checkpoints to 'some/path/' at every epoch end
     trainer = Trainer(default_root_dir="some/path/")
 
+
 ----
+
 
 *******************************
 LightningModule from checkpoint
@@ -108,7 +117,7 @@ The LightningModule also has access to the Hyperparameters
 
 Initialize with other parameters
 ================================
-If you used the *self.save_hyperparameters()* method in the init of the LightningModule, you can initialize the model with different hyperparameters.
+If you used the *self.save_hyperparameters()* method in the *__init__* method of the LightningModule, you can override these and initialize the model with different hyperparameters.
 
 .. code-block:: python
 
@@ -122,7 +131,23 @@ If you used the *self.save_hyperparameters()* method in the init of the Lightnin
     # uses in_dim=128, out_dim=10
     model = LitModel.load_from_checkpoint(PATH, in_dim=128, out_dim=10)
 
+In some cases, we may also pass entire PyTorch modules to the ``__init__`` method, which you don't want to save as hyperparameters due to their large size. If you didn't call ``self.save_hyperparameters()`` or ignore parameters via ``save_hyperparameters(ignore=...)``, then you must pass the missing positional arguments or keyword arguments when calling ``load_from_checkpoint`` method:
+
+
+.. code-block:: python
+
+    class LitAutoencoder(L.LightningModule):
+        def __init__(self, encoder, decoder):
+            ...
+
+        ...
+
+
+    model = LitAutoEncoder.load_from_checkpoint(PATH, encoder=encoder, decoder=decoder)
+
+
 ----
+
 
 *************************
 nn.Module from checkpoint
@@ -146,9 +171,11 @@ For example, let's pretend we created a LightningModule like so:
         ...
 
 
-    class Autoencoder(pl.LightningModule):
+    class Autoencoder(L.LightningModule):
         def __init__(self, encoder, decoder, *args, **kwargs):
-            ...
+            super().__init__()
+            self.encoder = encoder
+            self.decoder = decoder
 
 
     autoencoder = Autoencoder(Encoder(), Decoder())
@@ -158,10 +185,12 @@ Once the autoencoder has trained, pull out the relevant weights for your torch n
 .. code-block:: python
 
     checkpoint = torch.load(CKPT_PATH)
-    encoder_weights = checkpoint["encoder"]
-    decoder_weights = checkpoint["decoder"]
+    encoder_weights = {k: v for k, v in checkpoint["state_dict"].items() if k.startswith("encoder.")}
+    decoder_weights = {k: v for k, v in checkpoint["state_dict"].items() if k.startswith("decoder.")}
+
 
 ----
+
 
 *********************
 Disable checkpointing
@@ -175,11 +204,14 @@ You can disable checkpointing by passing:
 
 ----
 
+
 *********************
 Resume training state
 *********************
 
 If you don't just want to load weights, but instead restore the full training, do the following:
+
+Correct usage:
 
 .. code-block:: python
 
@@ -187,4 +219,16 @@ If you don't just want to load weights, but instead restore the full training, d
    trainer = Trainer()
 
    # automatically restores model, epoch, step, LR schedulers, etc...
-   trainer.fit(model, ckpt_path="some/path/to/my_checkpoint.ckpt")
+   trainer.fit(model, ckpt_path="path/to/your/checkpoint.ckpt")
+
+.. warning::
+
+   The argument `resume_from_checkpoint` has been deprecated in versions of PyTorch Lightning >= 1.0.0.
+   To resume training from a checkpoint, use the `ckpt_path` argument in the `fit()` method instead.
+
+Incorrect (deprecated) usage:
+
+.. code-block:: python
+
+   trainer = Trainer(resume_from_checkpoint="path/to/your/checkpoint.ckpt")
+   trainer.fit(model)

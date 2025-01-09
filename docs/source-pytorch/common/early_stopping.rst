@@ -1,6 +1,6 @@
 .. testsetup:: *
 
-    from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+    from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 
 .. _early_stopping:
 
@@ -9,18 +9,17 @@
 Early Stopping
 ##############
 
-.. raw:: html
-
-    <video width="50%" max-width="400px" controls
-    poster="https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/pl_docs/trainer_flags/yt_thumbs/thumb_earlystop.png"
-    src="https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/pl_docs/yt/Trainer+flags+19-+early+stopping_1.mp4"></video>
+.. video:: https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/pl_docs/yt/Trainer+flags+19-+early+stopping_1.mp4
+    :poster: https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/pl_docs/trainer_flags/yt_thumbs/thumb_earlystop.png
+    :width: 400
+    :muted:
 
 
 ***********************
 Stopping an Epoch Early
 ***********************
 
-You can stop and skip the rest of the current epoch early by overriding :meth:`~pytorch_lightning.core.hooks.ModelHooks.on_train_batch_start` to return ``-1`` when some condition is met.
+You can stop and skip the rest of the current epoch early by overriding :meth:`~lightning.pytorch.core.hooks.ModelHooks.on_train_batch_start` to return ``-1`` when some condition is met.
 
 If you do this repeatedly, for every epoch you had originally requested, then this will stop your entire training.
 
@@ -29,19 +28,19 @@ If you do this repeatedly, for every epoch you had originally requested, then th
 EarlyStopping Callback
 **********************
 
-The :class:`~pytorch_lightning.callbacks.early_stopping.EarlyStopping` callback can be used to monitor a metric and stop the training when no improvement is observed.
+The :class:`~lightning.pytorch.callbacks.early_stopping.EarlyStopping` callback can be used to monitor a metric and stop the training when no improvement is observed.
 
 To enable it:
 
-- Import :class:`~pytorch_lightning.callbacks.early_stopping.EarlyStopping` callback.
-- Log the metric you want to monitor using :meth:`~pytorch_lightning.core.module.LightningModule.log` method.
+- Import :class:`~lightning.pytorch.callbacks.early_stopping.EarlyStopping` callback.
+- Log the metric you want to monitor using :meth:`~lightning.pytorch.core.LightningModule.log` method.
 - Init the callback, and set ``monitor`` to the logged metric of your choice.
 - Set the ``mode`` based on the metric needs to be monitored.
-- Pass the :class:`~pytorch_lightning.callbacks.early_stopping.EarlyStopping` callback to the :class:`~pytorch_lightning.trainer.trainer.Trainer` callbacks flag.
+- Pass the :class:`~lightning.pytorch.callbacks.early_stopping.EarlyStopping` callback to the :class:`~lightning.pytorch.trainer.trainer.Trainer` callbacks flag.
 
 .. code-block:: python
 
-    from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+    from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 
 
     class LitModel(LightningModule):
@@ -73,7 +72,7 @@ Additional parameters that stop training at extreme points:
   training-specific hooks on epoch-level.
 
 
-In case you need early stopping in a different part of training, subclass :class:`~pytorch_lightning.callbacks.early_stopping.EarlyStopping`
+In case you need early stopping in a different part of training, subclass :class:`~lightning.pytorch.callbacks.early_stopping.EarlyStopping`
 and change where it is called:
 
 .. testcode::
@@ -88,11 +87,11 @@ and change where it is called:
             self._run_early_stopping_check(trainer)
 
 .. note::
-   The :class:`~pytorch_lightning.callbacks.early_stopping.EarlyStopping` callback runs
+   The :class:`~lightning.pytorch.callbacks.early_stopping.EarlyStopping` callback runs
    at the end of every validation epoch by default. However, the frequency of validation
-   can be modified by setting various parameters in the :class:`~pytorch_lightning.trainer.trainer.Trainer`,
-   for example :paramref:`~pytorch_lightning.trainer.trainer.Trainer.check_val_every_n_epoch`
-   and :paramref:`~pytorch_lightning.trainer.trainer.Trainer.val_check_interval`.
+   can be modified by setting various parameters in the :class:`~lightning.pytorch.trainer.trainer.Trainer`,
+   for example :paramref:`~lightning.pytorch.trainer.trainer.Trainer.check_val_every_n_epoch`
+   and :paramref:`~lightning.pytorch.trainer.trainer.Trainer.val_check_interval`.
    It must be noted that the ``patience`` parameter counts the number of
    validation checks with no improvement, and not the number of training epochs.
    Therefore, with parameters ``check_val_every_n_epoch=10`` and ``patience=3``, the trainer

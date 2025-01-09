@@ -3,7 +3,7 @@
 accelerators
 ------------
 
-.. currentmodule:: pytorch_lightning.accelerators
+.. currentmodule:: lightning.pytorch.accelerators
 
 .. autosummary::
     :toctree: api
@@ -13,14 +13,12 @@ accelerators
     Accelerator
     CPUAccelerator
     CUDAAccelerator
-    HPUAccelerator
-    IPUAccelerator
-    TPUAccelerator
+    XLAAccelerator
 
 callbacks
 ---------
 
-.. currentmodule:: pytorch_lightning.callbacks
+.. currentmodule:: lightning.pytorch.callbacks
 
 .. autosummary::
     :toctree: api
@@ -41,18 +39,20 @@ callbacks
     ModelCheckpoint
     ModelPruning
     ModelSummary
-    ProgressBarBase
-    QuantizationAwareTraining
+    OnExceptionCheckpoint
+    ProgressBar
     RichModelSummary
     RichProgressBar
     StochasticWeightAveraging
+    SpikeDetection
+    ThroughputMonitor
     Timer
     TQDMProgressBar
 
 cli
 -----
 
-.. currentmodule:: pytorch_lightning.cli
+.. currentmodule:: lightning.pytorch.cli
 
 .. autosummary::
     :toctree: api
@@ -66,7 +66,7 @@ cli
 core
 ----
 
-.. currentmodule:: pytorch_lightning.core
+.. currentmodule:: lightning.pytorch.core
 
 .. autosummary::
     :toctree: api
@@ -80,13 +80,14 @@ core
     LightningModule
     ~mixins.HyperparametersMixin
     ~optimizer.LightningOptimizer
-    ~saving.ModelIO
 
+
+.. _loggers-api-references:
 
 loggers
 -------
 
-.. currentmodule:: pytorch_lightning.loggers
+.. currentmodule:: lightning.pytorch.loggers
 
 .. autosummary::
     :toctree: api
@@ -100,97 +101,33 @@ loggers
     tensorboard
     wandb
 
-loops
-^^^^^
-
-Base Classes
-""""""""""""
-
-.. currentmodule:: pytorch_lightning.loops
-
-.. autosummary::
-    :toctree: api
-    :nosignatures:
-    :template: classtemplate.rst
-
-    ~dataloader.dataloader_loop.DataLoaderLoop
-    ~loop.Loop
-
-Training
-""""""""
-
-.. currentmodule:: pytorch_lightning.loops
-
-.. autosummary::
-    :toctree: api
-    :nosignatures:
-    :template: classtemplate.rst
-
-    ~batch.TrainingBatchLoop
-    ~epoch.TrainingEpochLoop
-    FitLoop
-    ~optimization.ManualOptimization
-    ~optimization.OptimizerLoop
-
-
-Validation and Testing
-""""""""""""""""""""""
-
-.. currentmodule:: pytorch_lightning.loops
-
-.. autosummary::
-    :toctree: api
-    :nosignatures:
-    :template: classtemplate.rst
-
-    ~epoch.EvaluationEpochLoop
-    ~dataloader.EvaluationLoop
-
-
-Prediction
-""""""""""
-
-.. currentmodule:: pytorch_lightning.loops
-
-.. autosummary::
-    :toctree: api
-    :nosignatures:
-    :template: classtemplate.rst
-
-    ~epoch.PredictionEpochLoop
-    ~dataloader.PredictionLoop
-
-
 plugins
 ^^^^^^^
 
 precision
 """""""""
 
-.. currentmodule:: pytorch_lightning.plugins.precision
+.. currentmodule:: lightning.pytorch.plugins.precision
 
 .. autosummary::
     :toctree: api
     :nosignatures:
     :template: classtemplate.rst
 
-    ColossalAIPrecisionPlugin
-    DeepSpeedPrecisionPlugin
-    DoublePrecisionPlugin
-    FullyShardedNativeMixedPrecisionPlugin
-    FullyShardedNativeNativeMixedPrecisionPlugin
-    HPUPrecisionPlugin
-    IPUPrecisionPlugin
-    MixedPrecisionPlugin
-    PrecisionPlugin
-    ShardedNativeMixedPrecisionPlugin
-    TPUBf16PrecisionPlugin
-    TPUPrecisionPlugin
+    DeepSpeedPrecision
+    DoublePrecision
+    HalfPrecision
+    FSDPPrecision
+    MixedPrecision
+    Precision
+    XLAPrecision
+    TransformerEnginePrecision
+    BitsandbytesPrecision
 
 environments
 """"""""""""
 
-.. currentmodule:: pytorch_lightning.plugins.environments
+.. currentmodule:: lightning.pytorch.plugins.environments
 
 .. autosummary::
     :toctree: api
@@ -201,6 +138,7 @@ environments
     KubeflowEnvironment
     LightningEnvironment
     LSFEnvironment
+    MPIEnvironment
     SLURMEnvironment
     TorchElasticEnvironment
     XLAEnvironment
@@ -208,7 +146,7 @@ environments
 io
 ""
 
-.. currentmodule:: pytorch_lightning.plugins.io
+.. currentmodule:: lightning.pytorch.plugins.io
 
 .. autosummary::
     :toctree: api
@@ -217,7 +155,6 @@ io
 
     AsyncCheckpointIO
     CheckpointIO
-    HPUCheckpointIO
     TorchCheckpointIO
     XLACheckpointIO
 
@@ -225,7 +162,7 @@ io
 others
 """"""
 
-.. currentmodule:: pytorch_lightning.plugins
+.. currentmodule:: lightning.pytorch.plugins
 
 .. autosummary::
     :toctree: api
@@ -233,12 +170,12 @@ others
     :template: classtemplate.rst
 
     LayerSync
-    NativeSyncBatchNorm
+    TorchSyncBatchNorm
 
 profiler
 --------
 
-.. currentmodule:: pytorch_lightning.profilers
+.. currentmodule:: lightning.pytorch.profilers
 
 .. autosummary::
     :toctree: api
@@ -255,7 +192,7 @@ profiler
 trainer
 -------
 
-.. currentmodule:: pytorch_lightning.trainer.trainer
+.. currentmodule:: lightning.pytorch.trainer.trainer
 
 .. autosummary::
     :toctree: api
@@ -267,37 +204,27 @@ trainer
 strategies
 ----------
 
-.. currentmodule:: pytorch_lightning.strategies
+.. currentmodule:: lightning.pytorch.strategies
 
 .. autosummary::
     :toctree: api
     :nosignatures:
     :template: classtemplate.rst
 
-    BaguaStrategy
-    ColossalAIStrategy
-    DDPFullyShardedNativeStrategy
-    DDPFullyShardedStrategy
-    DDPShardedStrategy
-    DDPSpawnShardedStrategy
-    DDPSpawnStrategy
     DDPStrategy
-    DataParallelStrategy
     DeepSpeedStrategy
-    HivemindStrategy
-    HPUParallelStrategy
-    IPUStrategy
+    FSDPStrategy
+    ModelParallelStrategy
     ParallelStrategy
     SingleDeviceStrategy
-    SingleHPUStrategy
-    SingleTPUStrategy
+    SingleDeviceXLAStrategy
     Strategy
-    TPUSpawnStrategy
+    XLAStrategy
 
 tuner
 -----
 
-.. currentmodule:: pytorch_lightning.tuner.tuning
+.. currentmodule:: lightning.pytorch.tuner.tuning
 
 .. autosummary::
     :toctree: api
@@ -309,22 +236,20 @@ tuner
 utilities
 ---------
 
-.. currentmodule:: pytorch_lightning.utilities
+.. currentmodule:: lightning.pytorch.utilities
 
 .. autosummary::
     :toctree: api
     :nosignatures:
 
-    apply_func
-    argparse
-    cloud_io
+    combined_loader
+    data
     deepspeed
-    distributed
-    finite_checks
     memory
     model_summary
-    optimizer
     parsing
     rank_zero
     seed
     warnings
+
+.. autofunction:: lightning.pytorch.utilities.measure_flops

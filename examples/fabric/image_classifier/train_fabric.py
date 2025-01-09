@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Here are 4 easy steps to use Fabric in your PyTorch code.
 
 1. Create the Lightning Fabric object at the beginning of your script.
@@ -21,11 +20,12 @@
 3. Apply ``setup`` over each model and optimizers pair, ``setup_dataloaders`` on all your dataloaders,
 and replace ``loss.backward()`` with ``self.backward(loss)``.
 
-4. Run the script from the terminal using ``lightning run model path/to/train.py``
+4. Run the script from the terminal using ``fabric run path/to/train.py``
 
 Accelerate your training loop by setting the ``--accelerator``, ``--strategy``, ``--devices`` options directly from
-the command line. See ``lightning run model --help`` or learn more from the documentation:
-https://pytorch-lightning.readthedocs.io/en/latest/fabric/fabric.html.
+the command line. See ``fabric run --help`` or learn more from the documentation:
+https://lightning.ai/docs/fabric.
+
 """
 
 import argparse
@@ -40,8 +40,7 @@ from torch.optim.lr_scheduler import StepLR
 from torchmetrics.classification import Accuracy
 from torchvision.datasets import MNIST
 
-from lightning.fabric import Fabric  # import Fabric
-from lightning.fabric import seed_everything
+from lightning.fabric import Fabric, seed_everything
 
 DATASETS_PATH = path.join(path.dirname(__file__), "..", "..", "..", "Datasets")
 
@@ -68,25 +67,23 @@ class Net(nn.Module):
         x = F.relu(x)
         x = self.dropout2(x)
         x = self.fc2(x)
-        output = F.log_softmax(x, dim=1)
-        return output
+        return F.log_softmax(x, dim=1)
 
 
 def run(hparams):
     # Create the Lightning Fabric object. The parameters like accelerator, strategy, devices etc. will be proided
-    # by the command line. See all options: `lightning run model --help`
+    # by the command line. See all options: `fabric run --help`
     fabric = Fabric()
 
-    fabric.hparams = hparams
     seed_everything(hparams.seed)  # instead of torch.manual_seed(...)
 
     transform = T.Compose([T.ToTensor(), T.Normalize((0.1307,), (0.3081,))])
-    # This is meant to ensure the data are download only by 1 process.
-    if fabric.is_global_zero:
-        MNIST(DATASETS_PATH, download=True)
-    fabric.barrier()
-    train_dataset = MNIST(DATASETS_PATH, train=True, transform=transform)
-    test_dataset = MNIST(DATASETS_PATH, train=False, transform=transform)
+
+    # Let rank 0 download the data first, then everyone will load MNIST
+    with fabric.rank_zero_first(local=False):  # set `local=True` if your filesystem is not shared between machines
+        train_dataset = MNIST(DATASETS_PATH, download=fabric.is_global_zero, train=True, transform=transform)
+        test_dataset = MNIST(DATASETS_PATH, download=fabric.is_global_zero, train=False, transform=transform)
+
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=hparams.batch_size,
@@ -106,11 +103,10 @@ def run(hparams):
     scheduler = StepLR(optimizer, step_size=1, gamma=hparams.gamma)
 
     # use torchmetrics instead of manually computing the accuracy
-    test_acc = Accuracy().to(fabric.device)
+    test_acc = Accuracy(task="multiclass", num_classes=10).to(fabric.device)
 
     # EPOCH LOOP
     for epoch in range(1, hparams.epochs + 1):
-
         # TRAINING LOOP
         model.train()
         for batch_idx, (data, target) in enumerate(train_loader):
@@ -123,13 +119,8 @@ def run(hparams):
             optimizer.step()
             if (batch_idx == 0) or ((batch_idx + 1) % hparams.log_interval == 0):
                 print(
-                    "Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
-                        epoch,
-                        batch_idx * len(data),
-                        len(train_loader.dataset),
-                        100.0 * batch_idx / len(train_loader),
-                        loss.item(),
-                    )
+                    f"Train Epoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)}"
+                    f" ({100.0 * batch_idx / len(train_loader):.0f}%)]\tLoss: {loss.item():.6f}"
                 )
                 if hparams.dry_run:
                     break
@@ -173,7 +164,7 @@ def run(hparams):
 if __name__ == "__main__":
     # Arguments can be passed in through the CLI as normal and will be parsed here
     # Example:
-    # lightning run model image_classifier.py accelerator=cuda --epochs=3
+    # fabric run image_classifier.py accelerator=cuda --epochs=3
     parser = argparse.ArgumentParser(description="Fabric MNIST Example")
     parser.add_argument(
         "--batch-size", type=int, default=64, metavar="N", help="input batch size for training (default: 64)"

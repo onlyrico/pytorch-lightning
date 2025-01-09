@@ -4,11 +4,11 @@ from unittest import mock
 
 import pytest
 
-from lightning_fabric.utilities.rank_zero import _get_rank
+from lightning.fabric.utilities.rank_zero import _get_rank
 
 
 @pytest.mark.parametrize(
-    "env_vars, expected",
+    ("env_vars", "expected"),
     [
         ({"RANK": "0"}, 1),
         ({"SLURM_PROCID": "0"}, 1),
@@ -21,13 +21,13 @@ from lightning_fabric.utilities.rank_zero import _get_rank
         ({"JSM_NAMESPACE_RANK": "4"}, None),
     ],
 )
-def test_rank_zero_known_environment_variables(env_vars, expected):
+def test_rank_zero_known_environment_variables(env_vars, expected, monkeypatch):
     """Test that rank environment variables are properly checked for rank_zero_only."""
     with mock.patch.dict(os.environ, env_vars):
         # force module reload to re-trigger the rank_zero_only.rank global computation
-        sys.modules.pop("lightning_utilities.core.rank_zero", None)
-        sys.modules.pop("lightning_fabric.utilities.rank_zero", None)
-        from lightning_fabric.utilities.rank_zero import rank_zero_only
+        monkeypatch.delitem(sys.modules, "lightning_utilities.core.rank_zero", raising=False)
+        monkeypatch.delitem(sys.modules, "lightning.fabric.utilities.rank_zero", raising=False)
+        from lightning.fabric.utilities.rank_zero import rank_zero_only
 
         @rank_zero_only
         def foo():
@@ -37,7 +37,7 @@ def test_rank_zero_known_environment_variables(env_vars, expected):
 
 
 @pytest.mark.parametrize(
-    "environ,expected_rank",
+    ("environ", "expected_rank"),
     [
         ({"JSM_NAMESPACE_RANK": "3"}, 3),
         ({"JSM_NAMESPACE_RANK": "3", "SLURM_PROCID": "2"}, 2),

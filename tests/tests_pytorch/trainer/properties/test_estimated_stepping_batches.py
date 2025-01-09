@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,17 +15,14 @@
 import logging
 import os
 from unittest import mock
-from unittest.mock import PropertyMock
 
 import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks.gradient_accumulation_scheduler import GradientAccumulationScheduler
-from pytorch_lightning.demos.boring_classes import BoringModel, RandomIterableDataset
-from pytorch_lightning.strategies.ipu import IPUStrategy
-from pytorch_lightning.utilities.exceptions import MisconfigurationException
+from lightning.pytorch import Trainer
+from lightning.pytorch.demos.boring_classes import BoringModel, RandomIterableDataset
+from lightning.pytorch.strategies import SingleDeviceXLAStrategy
 from tests_pytorch.conftest import mock_cuda_count
 from tests_pytorch.helpers.runif import RunIf
 
@@ -40,15 +37,6 @@ def test_num_stepping_batches_basic():
     assert trainer.estimated_stepping_batches == 64 * max_epochs
 
 
-def test_num_stepping_batches_with_diff_multiple_grad_accum_factor():
-    """Test that an error is raised if `Trainer` is configured with different gradient accumulation factors at
-    different epochs."""
-    grad_scheduler = GradientAccumulationScheduler(scheduling={7: 2})
-    trainer = Trainer(callbacks=[grad_scheduler])
-    with pytest.raises(MisconfigurationException, match="cannot be computed with different"):
-        assert trainer.estimated_stepping_batches
-
-
 def test_num_stepping_batches_raises_info_with_no_dataloaders_loaded(caplog):
     """Test that an info message is generated when dataloaders are loaded explicitly if they are not already
     configured."""
@@ -57,11 +45,13 @@ def test_num_stepping_batches_raises_info_with_no_dataloaders_loaded(caplog):
     trainer._data_connector.attach_data(model)
     trainer.strategy.connect(model)
 
-    message = "to estimate number of stepping batches"
-    trainer.reset_train_dataloader()
+    # artificially setup the data
+    trainer.fit_loop.setup_data()
+
     with caplog.at_level(logging.INFO):
         assert trainer.estimated_stepping_batches == 64
 
+    message = "to estimate number of stepping batches"
     assert message not in caplog.text
 
     trainer = Trainer(max_epochs=1)
@@ -80,7 +70,7 @@ def test_num_stepping_batches_iterable_dataset():
     max_steps = 1000
     trainer = Trainer(max_steps=max_steps)
     model = BoringModel()
-    train_dl = DataLoader(RandomIterableDataset(size=7, count=1e10))
+    train_dl = DataLoader(RandomIterableDataset(size=7, count=int(1e10)))
     trainer._data_connector.attach_data(model, train_dataloaders=train_dl)
     trainer.strategy.connect(model)
     assert trainer.estimated_stepping_batches == max_steps
@@ -96,15 +86,15 @@ def test_num_stepping_batches_infinite_training():
 
 
 @pytest.mark.parametrize("max_steps", [2, 100])
-def test_num_stepping_batches_with_max_steps(max_steps):
+def test_num_stepping_batches_with_max_steps(max_steps, tmp_path):
     """Test stepping batches with `max_steps`."""
-    trainer = Trainer(max_steps=max_steps)
+    trainer = Trainer(max_steps=max_steps, default_root_dir=tmp_path, logger=False, enable_checkpointing=False)
     model = BoringModel()
     trainer.fit(model)
     assert trainer.estimated_stepping_batches == max_steps
 
 
-@pytest.mark.parametrize("accumulate_grad_batches,expected_steps", [(2, 32), (3, 22)])
+@pytest.mark.parametrize(("accumulate_grad_batches", "expected_steps"), [(2, 32), (3, 22)])
 def test_num_stepping_batches_accumulate_gradients(accumulate_grad_batches, expected_steps):
     """Test the total stepping batches when accumulation grad batches is configured."""
     trainer = Trainer(max_epochs=1, accumulate_grad_batches=accumulate_grad_batches)
@@ -116,13 +106,12 @@ def test_num_stepping_batches_accumulate_gradients(accumulate_grad_batches, expe
 
 @RunIf(mps=False)
 @pytest.mark.parametrize(
-    ["trainer_kwargs", "estimated_steps"],
+    ("trainer_kwargs", "estimated_steps"),
     [
         ({"strategy": "ddp", "num_nodes": 1}, 10),
         ({"strategy": "ddp", "num_nodes": 2}, 5),
         ({"strategy": "ddp", "num_nodes": 3}, 4),
         ({"strategy": "ddp", "num_nodes": 4}, 3),
-        ({"strategy": "dp"}, 64),
     ],
 )
 def test_num_stepping_batches_gpu(trainer_kwargs, estimated_steps, monkeypatch):
@@ -148,34 +137,21 @@ def test_num_stepping_batches_with_tpu_single():
     trainer = Trainer(accelerator="tpu", devices=1, max_epochs=1)
     model = BoringModel()
     trainer._data_connector.attach_data(model)
+    assert isinstance(trainer.strategy, SingleDeviceXLAStrategy)
     trainer.strategy.connect(model)
-    assert trainer.estimated_stepping_batches == len(model.train_dataloader())
+    expected = len(model.train_dataloader())
+    assert trainer.estimated_stepping_batches == expected
 
 
-@RunIf(tpu=True)
-@mock.patch(
-    "pytorch_lightning.strategies.tpu_spawn.TPUSpawnStrategy.root_device",
-    new_callable=PropertyMock,
-    return_value=torch.device("xla:0"),
-)
-def test_num_stepping_batches_with_tpu_multi(_):
+class MultiprocessModel(BoringModel):
+    def on_train_start(self):
+        assert self.trainer.estimated_stepping_batches == len(self.train_dataloader()) // self.trainer.world_size
+
+
+@RunIf(tpu=True, standalone=True)
+@mock.patch.dict(os.environ, os.environ.copy(), clear=True)
+def test_num_stepping_batches_with_tpu_multi():
     """Test stepping batches with the TPU strategy across multiple devices."""
-    trainer = Trainer(accelerator="tpu", devices=8, max_epochs=1)
-    model = BoringModel()
-    trainer._data_connector.attach_data(model)
-    trainer.strategy.connect(model)
-    assert trainer.estimated_stepping_batches == len(model.train_dataloader()) // 8
-
-
-@mock.patch("pytorch_lightning.accelerators.ipu.IPUAccelerator.is_available", return_value=True)
-def test_num_stepping_batches_with_ipu(mock_ipu_acc_avail, monkeypatch):
-    """Test stepping batches with IPU training which acts like DP."""
-    import pytorch_lightning.strategies.ipu as ipu
-
-    monkeypatch.setattr(ipu, "_IPU_AVAILABLE", True)
-    trainer = Trainer(accelerator="ipu", devices=2, max_epochs=1)
-    model = BoringModel()
-    trainer._data_connector.attach_data(model)
-    trainer.strategy.connect(model)
-    assert isinstance(trainer.strategy, IPUStrategy)
-    assert trainer.estimated_stepping_batches == 64
+    trainer = Trainer(accelerator="tpu", devices="auto", max_epochs=1, logger=False, enable_checkpointing=False)
+    model = MultiprocessModel()
+    trainer.fit(model)

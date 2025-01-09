@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,33 +17,33 @@ from textwrap import dedent
 
 from tests_fabric.helpers.runif import RunIf
 
-from lightning_fabric.strategies.deepspeed import _DEEPSPEED_AVAILABLE
-from lightning_fabric.strategies.fairscale import _FAIRSCALE_AVAILABLE
-
-
-def test_imports():
-    try:
-        import deepspeed  # noqa
-    except ModuleNotFoundError:
-        assert not _DEEPSPEED_AVAILABLE
-    else:
-        assert _DEEPSPEED_AVAILABLE
-
-    try:
-        import fairscale.nn  # noqa
-    except ModuleNotFoundError:
-        assert not _FAIRSCALE_AVAILABLE
-    else:
-        assert _FAIRSCALE_AVAILABLE
-
 
 def test_import_fabric_with_torch_dist_unavailable():
     """Test that the package can be imported regardless of whether torch.distributed is available."""
     code = dedent(
         """
         import torch
-        torch.distributed.is_available = lambda: False  # pretend torch.distributed not available
-        import lightning_fabric
+        try:
+           # PyTorch 2.5 relies on torch,distributed._composable.fsdp not
+           # existing with USE_DISTRIBUTED=0
+           import torch._dynamo.variables.functions
+           torch._dynamo.variables.functions._fsdp_param_group = None
+        except ImportError:
+           pass
+
+        # pretend torch.distributed not available
+        for name in list(torch.distributed.__dict__.keys()):
+            if not name.startswith("__"):
+                delattr(torch.distributed, name)
+
+        torch.distributed.is_available = lambda: False
+
+        # needed for Dynamo in PT 2.5+ compare the torch.distributed source
+        class _ProcessGroupStub:
+            pass
+        torch.distributed.ProcessGroup = _ProcessGroupStub
+
+        import lightning.fabric
         """
     )
     # run in complete isolation
@@ -55,16 +55,35 @@ def test_import_deepspeed_lazily():
     """Test that we are importing deepspeed only when necessary."""
     code = dedent(
         """
-        import lightning_fabric
+        import lightning.fabric
         import sys
 
         assert 'deepspeed' not in sys.modules
-        from lightning_fabric.strategies import DeepSpeedStrategy
-        from lightning_fabric.plugins import DeepSpeedPrecision
+        from lightning.fabric.strategies import DeepSpeedStrategy
+        from lightning.fabric.plugins import DeepSpeedPrecision
         assert 'deepspeed' not in sys.modules
 
         import deepspeed
         assert 'deepspeed' in sys.modules
+        """
+    )
+    # run in complete isolation
+    assert subprocess.call([sys.executable, "-c", code]) == 0
+
+
+@RunIf(min_python="3.9")
+def test_import_lightning_multiprocessing_start_method_not_set():
+    """Regression test for avoiding the lightning import to set the multiprocessing context."""
+    package_name = "lightning_fabric" if "lightning.fabric" == "lightning_fabric" else "lightning"
+
+    # The following would fail with "context has already been set"
+    code = dedent(
+        f"""
+        import sys
+        import multiprocessing as mp
+
+        import {package_name}
+        mp.set_start_method("spawn")
         """
     )
     # run in complete isolation

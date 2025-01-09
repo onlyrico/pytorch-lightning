@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,9 +13,9 @@
 # limitations under the License.
 import torch.nn as nn
 
-from lightning_fabric.utilities.device_dtype_mixin import _DeviceDtypeModuleMixin
-from pytorch_lightning import Callback, Trainer
-from pytorch_lightning.demos.boring_classes import BoringModel
+from lightning.fabric.utilities.device_dtype_mixin import _DeviceDtypeModuleMixin
+from lightning.pytorch import Callback, Trainer
+from lightning.pytorch.demos.boring_classes import BoringModel
 from tests_pytorch.helpers.runif import RunIf
 
 
@@ -45,24 +45,10 @@ class DeviceAssertCallback(Callback):
 
 
 @RunIf(min_cuda_gpus=2)
-def test_submodules_multi_gpu_dp(tmpdir):
+def test_submodules_multi_gpu_ddp_spawn(tmp_path):
     model = TopModule()
     trainer = Trainer(
-        default_root_dir=tmpdir,
-        strategy="dp",
-        accelerator="gpu",
-        devices=2,
-        callbacks=[DeviceAssertCallback()],
-        max_steps=1,
-    )
-    trainer.fit(model)
-
-
-@RunIf(min_cuda_gpus=2)
-def test_submodules_multi_gpu_ddp_spawn(tmpdir):
-    model = TopModule()
-    trainer = Trainer(
-        default_root_dir=tmpdir,
+        default_root_dir=tmp_path,
         strategy="ddp_spawn",
         accelerator="gpu",
         devices=2,

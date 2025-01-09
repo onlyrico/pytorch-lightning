@@ -5,13 +5,13 @@
 ########################
 Debug your model (basic)
 ########################
+
 **Audience**: Users who want to learn the basics of debugging models.
 
-.. raw:: html
-
-    <video width="50%" max-width="400px" controls
-    poster="https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/pl_docs/trainer_flags/yt_thumbs/thumb_debugging.png"
-    src="https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/pl_docs/yt/Trainer+flags+7-+debugging_1.mp4"></video>
+.. video:: https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/pl_docs/yt/Trainer+flags+7-+debugging_1.mp4
+    :poster: https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/pl_docs/trainer_flags/yt_thumbs/thumb_debugging.png
+    :width: 400
+    :muted:
 
 ----
 
@@ -36,7 +36,7 @@ A breakpoint stops your code execution so you can inspect variables, etc... and 
         import pdb
 
         pdb.set_trace()
-        y = x ** 2
+        y = x**2
 
 In this example, the code will stop before executing the ``y = x**2`` line.
 
@@ -47,24 +47,24 @@ Run all your model code once quickly
 ************************************
 If you've ever trained a model for days only to crash during validation or testing then this trainer argument is about to become your best friend.
 
-The :paramref:`~pytorch_lightning.trainer.trainer.Trainer.fast_dev_run` argument in the trainer runs 5 batch of training, validation, test and prediction data through your trainer to see if there are any bugs:
+The :paramref:`~lightning.pytorch.trainer.trainer.Trainer.fast_dev_run` argument in the trainer runs 5 batch of training, validation, test and prediction data through your trainer to see if there are any bugs:
 
 .. code:: python
 
-    Trainer(fast_dev_run=True)
+    trainer = Trainer(fast_dev_run=True)
 
 To change how many batches to use, change the argument to an integer. Here we run 7 batches of each:
 
 .. code:: python
 
-    Trainer(fast_dev_run=7)
+    trainer = Trainer(fast_dev_run=7)
 
 
 .. note::
 
     This argument will disable tuner, checkpoint callbacks, early stopping callbacks,
-    loggers and logger callbacks like :class:`~pytorch_lightning.callbacks.lr_monitor.LearningRateMonitor` and
-    :class:`~pytorch_lightning.callbacks.device_stats_monitor.DeviceStatsMonitor`.
+    loggers and logger callbacks like :class:`~lightning.pytorch.callbacks.lr_monitor.LearningRateMonitor` and
+    :class:`~lightning.pytorch.callbacks.device_stats_monitor.DeviceStatsMonitor`.
 
 ----
 
@@ -92,8 +92,8 @@ Run a Sanity Check
 Lightning runs **2** steps of validation in the beginning of training.
 This avoids crashing in the validation loop sometime deep into a lengthy training loop.
 
-(See: :paramref:`~pytorch_lightning.trainer.trainer.Trainer.num_sanity_val_steps`
-argument of :class:`~pytorch_lightning.trainer.trainer.Trainer`)
+(See: :paramref:`~lightning.pytorch.trainer.trainer.Trainer.num_sanity_val_steps`
+argument of :class:`~lightning.pytorch.trainer.trainer.Trainer`)
 
 .. testcode::
 
@@ -114,17 +114,17 @@ this generate a table like:
 
 .. code-block:: text
 
-      | Name  | Type        | Params
-    ----------------------------------
-    0 | net   | Sequential  | 132 K
-    1 | net.0 | Linear      | 131 K
-    2 | net.1 | BatchNorm1d | 1.0 K
+      | Name  | Type        | Params | Mode
+    -------------------------------------------
+    0 | net   | Sequential  | 132 K  | train
+    1 | net.0 | Linear      | 131 K  | train
+    2 | net.1 | BatchNorm1d | 1.0 K  | train
 
-To add the child modules to the summary add a :class:`~pytorch_lightning.callbacks.model_summary.ModelSummary`:
+To add the child modules to the summary add a :class:`~lightning.pytorch.callbacks.model_summary.ModelSummary`:
 
 .. testcode::
 
-    from pytorch_lightning.callbacks import ModelSummary
+    from lightning.pytorch.callbacks import ModelSummary
 
     trainer = Trainer(callbacks=[ModelSummary(max_depth=-1)])
 
@@ -132,7 +132,7 @@ To print the model summary if ``.fit()`` is not called:
 
 .. code-block:: python
 
-    from pytorch_lightning.utilities.model_summary import ModelSummary
+    from lightning.pytorch.utilities.model_summary import ModelSummary
 
     model = LitModel()
     summary = ModelSummary(model, max_depth=-1)
@@ -142,7 +142,7 @@ To turn off the autosummary use:
 
 .. code:: python
 
-    Trainer(enable_model_summary=False)
+    trainer = Trainer(enable_model_summary=False)
 
 ----
 
@@ -162,10 +162,10 @@ With the input array, the summary table will include the input and output layer 
 
 .. code-block:: text
 
-      | Name  | Type        | Params | In sizes  | Out sizes
-    --------------------------------------------------------------
-    0 | net   | Sequential  | 132 K  | [10, 256] | [10, 512]
-    1 | net.0 | Linear      | 131 K  | [10, 256] | [10, 512]
-    2 | net.1 | BatchNorm1d | 1.0 K  | [10, 512] | [10, 512]
+      | Name  | Type        | Params | Mode  | In sizes  | Out sizes
+    ----------------------------------------------------------------------
+    0 | net   | Sequential  | 132 K  | train | [10, 256] | [10, 512]
+    1 | net.0 | Linear      | 131 K  | train | [10, 256] | [10, 512]
+    2 | net.1 | BatchNorm1d | 1.0 K  | train | [10, 512] | [10, 512]
 
 when you call ``.fit()`` on the Trainer. This can help you find bugs in the composition of your layers.

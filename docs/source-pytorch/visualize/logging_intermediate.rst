@@ -14,7 +14,7 @@ To track other artifacts, such as histograms or model topology graphs first sele
 
 .. code-block:: python
 
-    from pytorch_lightning import loggers as pl_loggers
+    from lightning.pytorch import loggers as pl_loggers
 
     tensorboard = pl_loggers.TensorBoardLogger(save_dir="")
     trainer = Trainer(logger=tensorboard)
@@ -35,17 +35,6 @@ then access the logger's API directly
 
 ----
 
-****************************************
-Track multiple metrics in the same chart
-****************************************
-If your logger supports plotting multiple metrics on the same chart, pass in a dictionary to *self.log*.
-
-.. code-block:: python
-
-    self.log("performance", {"acc": acc, "recall": recall})
-
-----
-
 *********************
 Track hyperparameters
 *********************
@@ -60,7 +49,7 @@ To track hyperparameters, first call *save_hyperparameters* from the LightningMo
 
 If your logger supports tracked hyperparameters, the hyperparameters will automatically show up on the logger dashboard.
 
-TODO: show tracked hyperparameters.
+.. TODO:: show tracked hyperparameters.
 
 ----
 
@@ -72,9 +61,9 @@ Multiple loggers support visualizing the model topology. Here's an example that 
 .. code-block:: python
 
     def any_lightning_module_function_or_hook(self):
-        tensorboard_logger = self.logger.experiment
+        tensorboard_logger = self.logger
 
         prototype_array = torch.Tensor(32, 1, 28, 27)
         tensorboard_logger.log_graph(model=self, input_array=prototype_array)
 
-TODO: show tensorboard topology.
+.. TODO:: show tensorboard topology.

@@ -6,10 +6,6 @@ Common Workflows
 
 Customize and extend Lightning for things like custom hardware or distributed strategies.
 
-.. join_slack::
-   :align: left
-
-----
 
 .. raw:: html
 
@@ -89,8 +85,8 @@ Customize and extend Lightning for things like custom hardware or distributed st
    :height: 100
 
 .. displayitem::
-   :header: Run on an on-prem cluster
-   :description: Learn to run on your own cluster
+   :header: Run on a multi-node cluster
+   :description: Learn to run multi-node in the cloud or on your cluster
    :col_css: col-md-12
    :button_link: clouds/cluster.html
    :height: 100
@@ -110,24 +106,17 @@ Customize and extend Lightning for things like custom hardware or distributed st
    :height: 100
 
 .. displayitem::
-   :header: Train 1 trillion+ parameter models
-   :description: Scale GPU training to 1 trillion + parameter models
+   :header: Train models with billions of parameters
+   :description: Scale GPU training to models with billions of parameters
    :col_css: col-md-12
-   :button_link: advanced/model_parallel.html
+   :button_link: advanced/model_parallel/index.html
    :height: 100
 
 .. displayitem::
-   :header: Train on the cloud
-   :description: Run models on the cloud.
+   :header: Train in a notebook
+   :description: Train models in interactive notebooks (Jupyter, Colab, Kaggle, etc.)
    :col_css: col-md-12
-   :button_link: clouds/cloud_training.html
-   :height: 100
-
-.. displayitem::
-   :header: Train on multiple machines over the internet
-   :description: Train on local machines or unreliable GPUs across the internet.
-   :col_css: col-md-12
-   :button_link: strategies/hivemind
+   :button_link: common/notebooks.html
    :height: 100
 
 .. displayitem::
@@ -141,14 +130,7 @@ Customize and extend Lightning for things like custom hardware or distributed st
    :header: Train on single or multiple HPUs
    :description: Train models faster with HPUs.
    :col_css: col-md-12
-   :button_link: accelerators/hpu.html
-   :height: 100
-
-.. displayitem::
-   :header: Train on single or multiple IPUs
-   :description: Train models faster with IPUs.
-   :col_css: col-md-12
-   :button_link: accelerators/ipu.html
+   :button_link: integrations/hpu/index.html
    :height: 100
 
 .. displayitem::

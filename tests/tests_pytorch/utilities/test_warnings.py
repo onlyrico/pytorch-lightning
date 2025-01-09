@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,20 +14,31 @@
 """Test that the warnings actually appear and they have the correct `stacklevel`
 
 Needs to be run outside of `pytest` as it captures all the warnings.
+
 """
+
+import importlib
+import os
+import warnings
 from contextlib import redirect_stderr
 from io import StringIO
+from unittest import mock
+
+import pytest
+from lightning_utilities.test.warning import no_warning_call
+
+import lightning.pytorch
+from lightning.pytorch.utilities.warnings import PossibleUserWarning
 
 if __name__ == "__main__":
     # check that logging is properly configured
     import logging
 
-    from pytorch_lightning import _DETAIL
-
     root_logger = logging.getLogger()
-    lightning_logger = logging.getLogger("pytorch_lightning")
+    lightning_logger = logging.getLogger("lightning.pytorch")
     # should have a `StreamHandler`
-    assert lightning_logger.hasHandlers() and len(lightning_logger.handlers) == 1
+    assert lightning_logger.hasHandlers()
+    assert len(lightning_logger.handlers) == 1
     # set our own stream for testing
     handler = lightning_logger.handlers[0]
     assert isinstance(handler, logging.StreamHandler)
@@ -48,14 +59,14 @@ if __name__ == "__main__":
     output = stderr.getvalue()
     assert output == "test2\n", repr(output)
 
-    stderr = StringIO()
-    lightning_logger.handlers[0].stream = stderr
-    with redirect_stderr(stderr):
-        # Lightning should not output DETAIL level logging by default
-        lightning_logger.detail("test1")
-        lightning_logger.setLevel(_DETAIL)
-        lightning_logger.detail("test2")
-        # logger should not output anything for DEBUG statements if set to DETAIL
-        lightning_logger.debug("test3")
-    output = stderr.getvalue()
-    assert output == "test2\n", repr(output)
+
+@pytest.mark.parametrize("setting", ["0", "off"])
+@mock.patch.dict(os.environ, {}, clear=True)
+def test_disable_possible_user_warnings_from_environment(setting):
+    with pytest.warns(PossibleUserWarning):
+        warnings.warn("test", PossibleUserWarning)
+    os.environ["POSSIBLE_USER_WARNINGS"] = setting
+    importlib.reload(lightning.pytorch)
+    with no_warning_call(PossibleUserWarning):
+        warnings.warn("test", PossibleUserWarning)
+    warnings.resetwarnings()

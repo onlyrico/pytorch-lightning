@@ -1,7 +1,0 @@
-:orphan:
-
-#########
-Callbacks
-#########
-
-Coming soon.

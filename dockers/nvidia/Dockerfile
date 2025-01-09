@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,33 +23,37 @@ ARG LIGHTNING_VERSION=""
 
 RUN python -c "import torch ; print(torch.__version__)" >> torch_version.info
 
-COPY ./ /workspace/lightning/
+COPY ./ /workspace/pytorch-lightning/
 
 RUN \
     cd /workspace  && \
     # replace by specific version if asked
     if [ ! -z "$LIGHTNING_VERSION" ] ; then \
-        rm -rf lightning ; \
-        git clone https://github.com/Lightning-AI/lightning.git ; \
-        cd lightning ; \
+        rm -rf pytorch-lightning ; \
+        git clone https://github.com/Lightning-AI/pytorch-lightning.git ; \
+        cd pytorch-lightning ; \
         git checkout ${LIGHTNING_VERSION} ; \
         git submodule update --init --recursive ; \
         cd .. ; \
     fi && \
 # save the examples \
-    ls -lh lightning/ && \
-    mv lightning/_notebooks/.notebooks/ notebooks && \
-    cp -r lightning/*examples . && \
+    ls -lh pytorch-lightning/ && \
+    rm -rf pytorch-lightning/.git && \
+    rm -rf pytorch-lightning/_notebooks/.git && \
+    mv pytorch-lightning/_notebooks/.notebooks/ notebooks && \
+    cp -r pytorch-lightning/*examples . && \
 
 # Installations \
     pip install "Pillow>=8.2, !=8.3.0" "cryptography>=3.4" "py>=1.10" --no-cache-dir && \
-    # remove colossalai from requirements since they are installed separately
-    python -c "fname = 'lightning/requirements/pytorch/strategies.txt' ; lines = [line for line in open(fname).readlines() if 'colossalai' not in line] ; open(fname, 'w').writelines(lines)" ; \
     PACKAGE_NAME=pytorch pip install './lightning[extra,loggers,strategies]' --no-cache-dir && \
-    rm -rf lightning && \
+    rm -rf pytorch-lightning && \
     pip list
 
-RUN pip install jupyterlab[all] -U
+RUN pip install jupyterlab[all] -U --no-cache-dir
+
+# create jupyter_notebook_config.py
+RUN mkdir -p /root/.jupyter && \
+    echo "c.NotebookApp.contents_manager_class = 'notebook.services.contents.largefilemanager.LargeFileManager'" > /root/.jupyter/jupyter_notebook_config.py
 
 ENV PYTHONPATH="/workspace"
 
