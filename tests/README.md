@@ -1,6 +1,6 @@
 # PyTorch-Lightning Tests
 
-Most of the tests in PyTorch Lightning train a [BoringModel](https://github.com/Lightning-AI/lightning/blob/master/src/pytorch_lightning/demos/boring_classes.py) under various trainer conditions (ddp, amp, etc...). Want to add a new test case and not sure how? [Talk to us!](https://www.pytorchlightning.ai/community)
+Most of the tests in PyTorch Lightning train a [BoringModel](https://github.com/Lightning-AI/lightning/blob/master/src/lightning/pytorch/demos/boring_classes.py) under various trainer conditions (ddp, amp, etc...). Want to add a new test case and not sure how? [Talk to us!](https://www.pytorchlightning.ai/community)
 
 ## Running tests
 
@@ -12,7 +12,7 @@ To setup a local development environment, install both local and test dependenci
 git clone https://github.com/Lightning-AI/lightning.git
 cd lightning
 
-# install required depedencies
+# install required dependencies
 export PACKAGE_NAME=pytorch
 python -m pip install ".[dev, examples]"
 # install pre-commit (optional)
@@ -42,7 +42,7 @@ This is useful if you do not test against all required dependency versions.
 **Docker:** Another option is to utilize the [pytorch lightning cuda base docker image](https://hub.docker.com/repository/docker/pytorchlightning/pytorch_lightning/tags?page=1&name=cuda). You can then run:
 
 ```bash
-python -m pytest src/pytorch_lightning tests/tests_pytorch -v
+python -m pytest src/lightning/pytorch tests/tests_pytorch -v
 ```
 
 You can also run a single test as follows:
@@ -64,9 +64,9 @@ You can rely on our CI to make sure all these tests pass.
 There are certain standalone tests, which you can run using:
 
 ```bash
-./tests/tests_pytorch/run_standalone_tests.sh tests/tests_pytorch/trainer/
+./tests/run_standalone_tests.sh tests/tests_pytorch/trainer/
 # or run a specific test
-./tests/tests_pytorch/run_standalone_tests.sh -k test_multi_gpu_model_ddp
+./tests/run_standalone_tests.sh -k test_multi_gpu_model_ddp
 ```
 
 ## Running Coverage
@@ -74,10 +74,8 @@ There are certain standalone tests, which you can run using:
 Make sure to run coverage on a GPU machine with at least 2 GPUs.
 
 ```bash
-cd pytorch-lightning
-
-# generate coverage (coverage is also installed as part of dev dependencies under requirements/pytorch/devel.txt)
-coverage run --source pytorch_lightning -m pytest src/pytorch_lightning tests/tests_pytorch pl_examples -v
+# generate coverage (coverage is also installed as part of dev dependencies)
+coverage run --source src/lightning/pytorch -m pytest src/lightning/pytorch tests/tests_pytorch -v
 
 # print coverage stats
 coverage report -m

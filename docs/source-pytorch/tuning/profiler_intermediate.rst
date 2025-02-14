@@ -12,11 +12,11 @@ Find bottlenecks in your code (intermediate)
 **************************
 Profile pytorch operations
 **************************
-To understand the cost of each PyTorch operation, use the :class:`~pytorch_lightning.profilers.pytorch.PyTorchProfiler` built on top of the `PyTorch profiler <https://pytorch.org/docs/master/profiler.html>`__.
+To understand the cost of each PyTorch operation, use the :class:`~lightning.pytorch.profilers.pytorch.PyTorchProfiler` built on top of the `PyTorch profiler <https://pytorch.org/docs/master/profiler.html>`__.
 
 .. code-block:: python
 
-    from pytorch_lightning.profilers import PyTorchProfiler
+    from lightning.pytorch.profilers import PyTorchProfiler
 
     profiler = PyTorchProfiler()
     trainer = Trainer(profiler=profiler)
@@ -55,7 +55,7 @@ The profiler will generate an output like this:
     Self CPU time total: 1.681ms
 
 .. note::
-    When using the PyTorch Profiler, wall clock time will not not be representative of the true wall clock time.
+    When using the PyTorch Profiler, wall clock time will not be representative of the true wall clock time.
     This is due to forcing profiled operations to be measured synchronously, when many CUDA ops happen asynchronously.
     It is recommended to use this Profiler to find bottlenecks/breakdowns, however for end to end wall clock time use
     the ``SimpleProfiler``.
@@ -65,11 +65,11 @@ The profiler will generate an output like this:
 ***************************
 Profile a distributed model
 ***************************
-To profile a distributed model, use the :class:`~pytorch_lightning.profilers.pytorch.PyTorchProfiler` with the *filename* argument which will save a report per rank.
+To profile a distributed model, use the :class:`~lightning.pytorch.profilers.pytorch.PyTorchProfiler` with the *filename* argument which will save a report per rank.
 
 .. code-block:: python
 
-    from pytorch_lightning.profilers import PyTorchProfiler
+    from lightning.pytorch.profilers import PyTorchProfiler
 
     profiler = PyTorchProfiler(filename="perf-logs")
     trainer = Trainer(profiler=profiler)
@@ -142,7 +142,7 @@ This profiler will record ``training_step``, ``validation_step``, ``test_step``,
 The output above shows the profiling for the action ``training_step``.
 
 .. note::
-    When using the PyTorch Profiler, wall clock time will not not be representative of the true wall clock time.
+    When using the PyTorch Profiler, wall clock time will not be representative of the true wall clock time.
     This is due to forcing profiled operations to be measured synchronously, when many CUDA ops happen asynchronously.
     It is recommended to use this Profiler to find bottlenecks/breakdowns, however for end to end wall clock time use
     the ``SimpleProfiler``.
@@ -152,11 +152,11 @@ The output above shows the profiling for the action ``training_step``.
 *****************************
 Visualize profiled operations
 *****************************
-To visualize the profiled operations, enable **emit_nvtx** in the :class:`~pytorch_lightning.profilers.pytorch.PyTorchProfiler`.
+To visualize the profiled operations, enable **emit_nvtx** in the :class:`~lightning.pytorch.profilers.pytorch.PyTorchProfiler`.
 
 .. code-block:: python
 
-    from pytorch_lightning.profilers import PyTorchProfiler
+    from lightning.pytorch.profilers import PyTorchProfiler
 
     profiler = PyTorchProfiler(emit_nvtx=True)
     trainer = Trainer(profiler=profiler)

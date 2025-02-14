@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,31 +11,33 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from unittest.mock import Mock
+
 import pytest
 import torch
 
-from pytorch_lightning import Trainer
-from pytorch_lightning.demos.boring_classes import BoringModel
+from lightning.pytorch import Trainer
+from lightning.pytorch.plugins import DoublePrecision, HalfPrecision, Precision
+from lightning.pytorch.strategies import SingleDeviceStrategy
 from tests_pytorch.helpers.datamodules import ClassifDataModule
 from tests_pytorch.helpers.runif import RunIf
-from tests_pytorch.strategies.test_dp import CustomClassificationModelDP
+from tests_pytorch.helpers.simple_models import ClassificationModel
 
 
 @pytest.mark.parametrize(
     "trainer_kwargs",
-    (
-        pytest.param(dict(accelerator="gpu", devices=1), marks=RunIf(min_cuda_gpus=1)),
-        pytest.param(dict(strategy="dp", accelerator="gpu", devices=2), marks=RunIf(min_cuda_gpus=2)),
-        pytest.param(dict(strategy="ddp_spawn", accelerator="gpu", devices=2), marks=RunIf(min_cuda_gpus=2)),
-        pytest.param(dict(accelerator="mps", devices=1), marks=RunIf(mps=True)),
-    ),
+    [
+        pytest.param({"accelerator": "gpu", "devices": 1}, marks=RunIf(min_cuda_gpus=1)),
+        pytest.param({"strategy": "ddp_spawn", "accelerator": "gpu", "devices": 2}, marks=RunIf(min_cuda_gpus=2)),
+        pytest.param({"accelerator": "mps", "devices": 1}, marks=RunIf(mps=True)),
+    ],
 )
 @RunIf(sklearn=True)
-def test_evaluate(tmpdir, trainer_kwargs):
+def test_evaluate(tmp_path, trainer_kwargs):
     dm = ClassifDataModule()
-    model = CustomClassificationModelDP()
+    model = ClassificationModel()
     trainer = Trainer(
-        default_root_dir=tmpdir, max_epochs=2, limit_train_batches=10, limit_val_batches=10, **trainer_kwargs
+        default_root_dir=tmp_path, max_epochs=2, limit_train_batches=10, limit_val_batches=10, **trainer_kwargs
     )
 
     trainer.fit(model, datamodule=dm)
@@ -51,19 +53,37 @@ def test_evaluate(tmpdir, trainer_kwargs):
     torch.testing.assert_close(old_weights, new_weights)
 
 
-def test_model_parallel_setup_called(tmpdir):
-    class TestModel(BoringModel):
-        def __init__(self):
-            super().__init__()
-            self.configure_sharded_model_called = False
-            self.layer = None
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param("cuda:0", marks=RunIf(min_cuda_gpus=1)),
+        pytest.param("mps:0", marks=RunIf(mps=True)),
+    ],
+)
+@pytest.mark.parametrize(
+    ("precision", "dtype"),
+    [
+        (Precision(), torch.float32),
+        pytest.param(DoublePrecision(), torch.float64, marks=RunIf(mps=False)),
+        (HalfPrecision("16-true"), torch.float16),
+        pytest.param(HalfPrecision("bf16-true"), torch.bfloat16, marks=RunIf(bf16_cuda=True)),
+    ],
+)
+@pytest.mark.parametrize("empty_init", [None, True, False])
+def test_module_init_context(device, precision, dtype, empty_init, monkeypatch):
+    """Test that the module under the init-module-context gets moved to the right device and dtype."""
+    init_mock = Mock()
+    monkeypatch.setattr(torch.Tensor, "uniform_", init_mock)
 
-        def configure_sharded_model(self):
-            self.configure_sharded_model_called = True
-            self.layer = torch.nn.Linear(32, 2)
+    device = torch.device(device)
+    strategy = SingleDeviceStrategy(device=device, precision_plugin=precision)  # surrogate class to test base class
+    with strategy.tensor_init_context(empty_init=empty_init):
+        module = torch.nn.Linear(2, 2)
 
-    model = TestModel()
-    trainer = Trainer(default_root_dir=tmpdir, limit_train_batches=2, limit_val_batches=2, max_epochs=1)
-    trainer.fit(model)
-
-    assert model.configure_sharded_model_called
+    assert module.weight.device == module.bias.device == device
+    assert module.weight.dtype == module.bias.dtype == dtype
+    if not empty_init:
+        init_mock.assert_called()
+    else:
+        init_mock.assert_not_called()

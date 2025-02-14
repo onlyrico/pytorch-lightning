@@ -4,6 +4,7 @@ DCGAN - Raw PyTorch Implementation
 Code adapted from the official PyTorch DCGAN tutorial:
 https://pytorch.org/tutorials/beginner/dcgan_faces_tutorial.html
 """
+
 import os
 import random
 import time
@@ -55,21 +56,24 @@ def main():
         root=dataroot,
         split="all",
         download=True,
-        transform=transforms.Compose(
-            [
-                transforms.Resize(image_size),
-                transforms.CenterCrop(image_size),
-                transforms.ToTensor(),
-                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-            ]
-        ),
+        transform=transforms.Compose([
+            transforms.Resize(image_size),
+            transforms.CenterCrop(image_size),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        ]),
     )
 
     # Create the dataloader
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=workers)
 
     # Decide which device we want to run on
-    device = torch.device("cuda:0" if (torch.cuda.is_available() and num_gpus > 0) else "cpu")
+    if torch.cuda.is_available() and num_gpus > 0:
+        device = torch.device("cuda:0")
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
 
     output_dir = Path("outputs-torch", time.strftime("%Y%m%d-%H%M%S"))
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -231,7 +235,7 @@ class Generator(nn.Module):
             nn.ReLU(True),
             # state size. (ngf) x 32 x 32
             nn.ConvTranspose2d(ngf, nc, 4, 2, 1, bias=False),
-            nn.Tanh()
+            nn.Tanh(),
             # state size. (nc) x 64 x 64
         )
 

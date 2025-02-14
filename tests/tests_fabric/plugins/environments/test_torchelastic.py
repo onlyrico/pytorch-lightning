@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,11 +13,12 @@
 # limitations under the License.
 import logging
 import os
+import re
 from unittest import mock
 
 import pytest
 
-from lightning_fabric.plugins.environments import TorchElasticEnvironment
+from lightning.fabric.plugins.environments import TorchElasticEnvironment
 
 
 @mock.patch.dict(os.environ, {}, clear=True)
@@ -57,14 +58,14 @@ def test_attributes_from_environment_variables(caplog):
     assert env.local_rank() == 2
     assert env.node_rank() == 3
     # setter should be no-op
-    with caplog.at_level(logging.DEBUG, logger="lightning_fabric.plugins.environments"):
+    with caplog.at_level(logging.DEBUG, logger="lightning.fabric.plugins.environments"):
         env.set_global_rank(100)
     assert env.global_rank() == 1
     assert "setting global rank is not allowed" in caplog.text
 
     caplog.clear()
 
-    with caplog.at_level(logging.DEBUG, logger="lightning_fabric.plugins.environments"):
+    with caplog.at_level(logging.DEBUG, logger="lightning.fabric.plugins.environments"):
         env.set_world_size(100)
     assert env.world_size() == 20
     assert "setting world size is not allowed" in caplog.text
@@ -82,3 +83,12 @@ def test_detect():
         },
     ):
         assert TorchElasticEnvironment.detect()
+
+
+@mock.patch.dict(os.environ, {"WORLD_SIZE": "8"})
+def test_validate_user_settings():
+    """Test that the environment can validate the number of devices and nodes set in Fabric/Trainer."""
+    env = TorchElasticEnvironment()
+    env.validate_settings(num_devices=4, num_nodes=2)
+    with pytest.raises(ValueError, match=re.escape("the product (2 * 2) does not match the world size (8)")):
+        env.validate_settings(num_devices=2, num_nodes=2)

@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ from unittest import mock
 
 import pytest
 
-from lightning_fabric.plugins.environments import KubeflowEnvironment
+from lightning.fabric.plugins.environments import KubeflowEnvironment
 
 
 @mock.patch.dict(os.environ, {}, clear=True)
@@ -61,43 +61,20 @@ def test_attributes_from_environment_variables(caplog):
     assert env.local_rank() == 0
     assert env.node_rank() == 1
     # setter should be no-op
-    with caplog.at_level(logging.DEBUG, logger="lightning_fabric.plugins.environments"):
+    with caplog.at_level(logging.DEBUG, logger="lightning.fabric.plugins.environments"):
         env.set_global_rank(100)
     assert env.global_rank() == 1
     assert "setting global rank is not allowed" in caplog.text
 
     caplog.clear()
 
-    with caplog.at_level(logging.DEBUG, logger="lightning_fabric.plugins.environments"):
+    with caplog.at_level(logging.DEBUG, logger="lightning.fabric.plugins.environments"):
         env.set_world_size(100)
     assert env.world_size() == 20
     assert "setting world size is not allowed" in caplog.text
 
 
-@mock.patch.dict(
-    os.environ,
-    {
-        "KUBERNETES_PORT": "tcp://127.0.0.1:443",
-        "MASTER_ADDR": "1.2.3.4",
-        "MASTER_PORT": "500",
-        "WORLD_SIZE": "20",
-        "RANK": "1",
-    },
-)
 def test_detect_kubeflow():
-    assert KubeflowEnvironment.detect()
-
-
-@mock.patch.dict(
-    os.environ,
-    {
-        "KUBERNETES_PORT": "tcp://127.0.0.1:443",
-        "MASTER_ADDR": "1.2.3.4",
-        "MASTER_PORT": "500",
-        "WORLD_SIZE": "20",
-        "RANK": "1",
-        "GROUP_RANK": "1",
-    },
-)
-def test_detect_torchelastic_over_kubeflow():
-    assert not KubeflowEnvironment.detect()
+    """Test that the KubeflowEnvironment does not support auto-detection."""
+    with pytest.raises(NotImplementedError, match="can't be detected automatically"):
+        KubeflowEnvironment.detect()

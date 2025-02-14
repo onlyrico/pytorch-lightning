@@ -4,15 +4,14 @@ TPU training (Basic)
 ====================
 **Audience:** Users looking to train on single or multiple TPU cores.
 
+.. warning::  This is an :ref:`experimental <versioning:Experimental API>` feature.
+
 ----
 
-.. raw:: html
-
-    <video width="50%" max-width="400px" controls
-    poster="https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/pl_docs/trainer_flags/yt_thumbs/thumb_tpus.png"
-    src="https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/pl_docs/trainer_flags/tpu_cores.mp4"></video>
-
-|
+.. video:: https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/pl_docs/trainer_flags/tpu_cores.mp4
+    :poster: https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/pl_docs/trainer_flags/yt_thumbs/thumb_tpus.png
+    :width: 400
+    :muted:
 
 Lightning supports running on TPUs. At this moment, TPUs are available
 on Google Cloud (GCP), Google Colab and Kaggle Environments. For more information on TPUs
@@ -32,36 +31,26 @@ some subset of those 2048 cores.
 
 ----
 
-Run on 1 TPU core
------------------
-Enable the following Trainer arguments to run on 1 TPU.
+Run on TPU cores
+----------------
 
-.. code::
-
-    trainer = Trainer(accelerator="tpu", devices=1)
-
-----
-
-Run on multiple TPU cores
--------------------------
-For multiple TPU cores, change the value of the devices flag.
-
-.. code::
-
-    trainer = Trainer(accelerator="tpu", devices=8)
-
-----
-
-Run on a specific TPU core
---------------------------
-
-To run on a specific core, specify the index of the TPU core.
+To run on different cores, modify the ``devices`` argument.
 
 .. code-block:: python
 
-    trainer = pl.Trainer(accelerator="tpu", devices=[5])
+    # run on as many TPUs as available by default
+    trainer = Trainer(accelerator="auto", devices="auto", strategy="auto")
+    # equivalent to
+    trainer = Trainer()
 
-This example runs on the 5th core, not on five cores.
+    # run on one TPU core
+    trainer = Trainer(accelerator="tpu", devices=1)
+    # run on multiple TPU cores
+    trainer = Trainer(accelerator="tpu", devices=8)
+    # run on one specific TPU core: the 2nd core (index 1)
+    trainer = Trainer(accelerator="tpu", devices=[1])
+    # choose the number of cores automatically
+    trainer = Trainer(accelerator="tpu", devices="auto")
 
 ----
 
@@ -88,23 +77,19 @@ To get a TPU on colab, follow these steps:
 
    .. code-block::
 
-        !pip install cloud-tpu-client https://storage.googleapis.com/tpu-pytorch/wheels/torch_xla-1.12-cp39-cp39m-linux_x86_64.whl
+        !pip install cloud-tpu-client https://storage.googleapis.com/tpu-pytorch/wheels/torch_xla-1.13-cp38-cp38m-linux_x86_64.whl
 
 5. Once the above is done, install PyTorch Lightning.
 
    .. code-block::
 
-        !pip install pytorch-lightning
+        !pip install lightning
 
 6. Then set up your LightningModule as normal.
 
 Google Cloud (GCP)
 ^^^^^^^^^^^^^^^^^^
-You could refer to this `page <https://cloud.google.com/tpu/docs/setup-gcp-account>`_ for getting started with Cloud TPU resources on GCP.
-
-Kaggle
-^^^^^^
-For starting Kaggle projects with TPUs, refer to this `kernel <https://www.kaggle.com/pytorchlightning/pytorch-on-tpu-with-pytorch-lightning>`_.
+You could refer to this `page <https://cloud.google.com/tpu/docs/v4-users-guide>`_ for getting started with Cloud TPU resources on GCP.
 
 ----
 
@@ -122,9 +107,8 @@ There are cases in which training on TPUs is slower when compared with GPUs, for
 - Limited resources when using TPU's with PyTorch `Link <https://github.com/pytorch/xla/issues/2054#issuecomment-627367729>`_
 - XLA Graph compilation during the initial steps `Reference <https://github.com/pytorch/xla/issues/2383#issuecomment-666519998>`_
 - Some tensor ops are not fully supported on TPU, or not supported at all. These operations will be performed on CPU (context switch).
-- PyTorch integration is still experimental. Some performance bottlenecks may simply be the result of unfinished implementation.
 
-The official PyTorch XLA `performance guide <https://github.com/pytorch/xla/blob/master/TROUBLESHOOTING.md#known-performance-caveats>`_
+The official PyTorch XLA `performance guide <https://github.com/pytorch/xla/blob/v2.5.0/TROUBLESHOOTING.md#known-performance-caveats>`_
 has more detailed information on how PyTorch code can be optimized for TPU. In particular, the
-`metrics report <https://github.com/pytorch/xla/blob/master/TROUBLESHOOTING.md#get-a-metrics-report>`_ allows
+`metrics report <https://github.com/pytorch/xla/blob/v2.5.0/TROUBLESHOOTING.md#get-a-metrics-report>`_ allows
 one to identify operations that lead to context switching.

@@ -1,13 +1,13 @@
 import pytest
 from lightning_utilities.test.warning import no_warning_call
 
-from lightning_fabric.utilities.warnings import PossibleUserWarning
-from pytorch_lightning import Trainer
-from pytorch_lightning.demos.boring_classes import BoringModel
+from lightning.fabric.utilities.warnings import PossibleUserWarning
+from lightning.pytorch import Trainer
+from lightning.pytorch.demos.boring_classes import BoringModel
 
 
 @pytest.mark.parametrize(
-    ["min_epochs", "max_epochs", "min_steps", "max_steps"],
+    ("min_epochs", "max_epochs", "min_steps", "max_steps"),
     [
         (None, 3, None, -1),
         (None, None, None, 20),
@@ -18,12 +18,12 @@ from pytorch_lightning.demos.boring_classes import BoringModel
         (None, 3, 10, -1),
     ],
 )
-def test_min_max_steps_epochs(tmpdir, min_epochs, max_epochs, min_steps, max_steps):
+def test_min_max_steps_epochs(tmp_path, min_epochs, max_epochs, min_steps, max_steps):
     """Tests that max_steps can be used without max_epochs."""
     model = BoringModel()
 
     trainer = Trainer(
-        default_root_dir=tmpdir,
+        default_root_dir=tmp_path,
         min_epochs=min_epochs,
         max_epochs=max_epochs,
         min_steps=min_steps,
@@ -37,7 +37,7 @@ def test_min_max_steps_epochs(tmpdir, min_epochs, max_epochs, min_steps, max_ste
         assert trainer.global_step == trainer.max_steps
 
 
-def test_max_epochs_not_set_warning():
+def test_max_epochs_not_set_warning(tmp_path):
     """Test that a warning is only emitted when `max_epochs` was not set by the user."""
 
     class CustomModel(BoringModel):
@@ -47,8 +47,7 @@ def test_max_epochs_not_set_warning():
     match = "`max_epochs` was not set. Setting it to 1000 epochs."
 
     model = CustomModel()
-    model.training_epoch_end = None
-    trainer = Trainer(max_epochs=None, limit_train_batches=1)
+    trainer = Trainer(logger=False, enable_checkpointing=False, max_epochs=None, limit_train_batches=1)
     with pytest.warns(PossibleUserWarning, match=match):
         trainer.fit(model)
 

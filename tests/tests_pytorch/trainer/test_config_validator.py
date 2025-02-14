@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,20 +11,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from unittest.mock import Mock
+
 import pytest
 import torch
 
-import pytorch_lightning as pl
-from lightning_fabric.utilities.warnings import PossibleUserWarning
-from pytorch_lightning import LightningDataModule, LightningModule, Trainer
-from pytorch_lightning.demos.boring_classes import BoringModel, RandomDataset
-from pytorch_lightning.utilities.exceptions import MisconfigurationException
-from tests_pytorch.conftest import mock_cuda_count
+from lightning.fabric.utilities.warnings import PossibleUserWarning
+from lightning.pytorch import LightningDataModule, LightningModule, Trainer
+from lightning.pytorch.demos.boring_classes import BoringModel, RandomDataset
+from lightning.pytorch.trainer.configuration_validator import (
+    __verify_eval_loop_configuration,
+    __verify_train_val_loop_configuration,
+)
+from lightning.pytorch.utilities.exceptions import MisconfigurationException
 
 
-def test_wrong_train_setting(tmpdir):
+def test_wrong_train_setting(tmp_path):
     """Test that an error is raised when no `training_step()` is defined."""
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=1)
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=1)
 
     with pytest.raises(MisconfigurationException, match=r"No `training_step\(\)` method defined."):
         model = BoringModel()
@@ -32,9 +36,9 @@ def test_wrong_train_setting(tmpdir):
         trainer.fit(model)
 
 
-def test_wrong_configure_optimizers(tmpdir):
+def test_wrong_configure_optimizers(tmp_path):
     """Test that an error is thrown when no `configure_optimizers()` is defined."""
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=1)
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=1)
 
     with pytest.raises(MisconfigurationException, match=r"No `configure_optimizers\(\)` method defined."):
         model = BoringModel()
@@ -42,9 +46,9 @@ def test_wrong_configure_optimizers(tmpdir):
         trainer.fit(model)
 
 
-def test_fit_val_loop_config(tmpdir):
+def test_fit_val_loop_config(tmp_path):
     """When either val loop or val data are missing raise warning."""
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=1)
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=1)
 
     # no val data has val loop
     with pytest.warns(UserWarning, match=r"You passed in a `val_dataloader` but have no `validation_step`"):
@@ -59,9 +63,9 @@ def test_fit_val_loop_config(tmpdir):
         trainer.fit(model)
 
 
-def test_eval_loop_config(tmpdir):
+def test_eval_loop_config(tmp_path):
     """When either eval step or eval data is missing."""
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=1)
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=1)
 
     # has test data but no val step
     model = BoringModel()
@@ -89,7 +93,7 @@ def test_eval_loop_config(tmpdir):
 
 
 @pytest.mark.parametrize("datamodule", [False, True])
-def test_trainer_predict_verify_config(tmpdir, datamodule):
+def test_trainer_predict_verify_config(tmp_path, datamodule):
     class TestModel(LightningModule):
         def __init__(self):
             super().__init__()
@@ -114,7 +118,7 @@ def test_trainer_predict_verify_config(tmpdir, datamodule):
         data = TestLightningDataModule(data)
 
     model = TestModel()
-    trainer = Trainer(default_root_dir=tmpdir)
+    trainer = Trainer(default_root_dir=tmp_path)
     results = trainer.predict(model, data)
 
     assert len(results) == 2
@@ -135,26 +139,26 @@ def test_trainer_manual_optimization_config():
         trainer.fit(model)
 
 
-@pytest.mark.parametrize("trainer_kwargs", [{"accelerator": "ipu"}, {"accelerator": "gpu", "strategy": "dp"}])
-@pytest.mark.parametrize("hook", ["transfer_batch_to_device", "on_after_batch_transfer"])
-def test_raise_exception_with_batch_transfer_hooks(monkeypatch, hook, trainer_kwargs, tmpdir):
-    """Test that an exception is raised when overriding batch_transfer_hooks."""
-    if trainer_kwargs.get("accelerator") == "gpu":
-        match_pattern = rf"Overriding `{hook}` is not .* in DP mode."
-        mock_cuda_count(monkeypatch, 2)
-    elif trainer_kwargs.get("accelerator") == "ipu":
-        match_pattern = rf"Overriding `{hook}` is not .* with IPUs"
-        monkeypatch.setattr(pl.accelerators.ipu.IPUAccelerator, "is_available", lambda: True)
-        monkeypatch.setattr(pl.strategies.ipu, "_IPU_AVAILABLE", lambda: True)
+def test_legacy_epoch_end_hooks():
+    class TrainingEpochEndModel(BoringModel):
+        def training_epoch_end(self, outputs):
+            pass
 
-    def custom_method(self, batch, *_, **__):
-        batch = batch + 1
-        return batch
+    class ValidationEpochEndModel(BoringModel):
+        def validation_epoch_end(self, outputs):
+            pass
 
-    trainer = Trainer(default_root_dir=tmpdir, **trainer_kwargs)
+    trainer = Mock()
+    with pytest.raises(NotImplementedError, match="training_epoch_end` has been removed in v2.0"):
+        __verify_train_val_loop_configuration(trainer, TrainingEpochEndModel())
+    with pytest.raises(NotImplementedError, match="validation_epoch_end` has been removed in v2.0"):
+        __verify_train_val_loop_configuration(trainer, ValidationEpochEndModel())
 
-    model = BoringModel()
-    setattr(model, hook, custom_method)
+    class TestEpochEndModel(BoringModel):
+        def test_epoch_end(self, outputs):
+            pass
 
-    with pytest.raises(MisconfigurationException, match=match_pattern):
-        trainer.fit(model)
+    with pytest.raises(NotImplementedError, match="validation_epoch_end` has been removed in v2.0"):
+        __verify_eval_loop_configuration(ValidationEpochEndModel(), "val")
+    with pytest.raises(NotImplementedError, match="test_epoch_end` has been removed in v2.0"):
+        __verify_eval_loop_configuration(TestEpochEndModel(), "test")

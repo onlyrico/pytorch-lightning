@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,30 +15,31 @@ import os
 
 import pytest
 
-from pytorch_lightning import Trainer
-from pytorch_lightning.demos.boring_classes import BoringModel
-from tests_pytorch.helpers.advanced_models import BasicGAN, ParityModuleMNIST, ParityModuleRNN
+from lightning.pytorch import Trainer
+from lightning.pytorch.demos.boring_classes import BoringModel
+from tests_pytorch.helpers.advanced_models import BasicGAN, ParityModuleMNIST, ParityModuleRNN, TBPTTModule
 from tests_pytorch.helpers.datamodules import ClassifDataModule, RegressDataModule
 from tests_pytorch.helpers.runif import RunIf
 from tests_pytorch.helpers.simple_models import ClassificationModel, RegressionModel
 
 
+@pytest.mark.flaky(reruns=3)
 @pytest.mark.parametrize(
-    "data_class,model_class",
+    ("data_class", "model_class"),
     [
         (None, BoringModel),
-        (None, BasicGAN),
+        pytest.param(None, BasicGAN, marks=RunIf(mps=False)),
         (None, ParityModuleRNN),
         (None, ParityModuleMNIST),
-        pytest.param(ClassifDataModule, ClassificationModel, marks=RunIf(sklearn=True)),
-        pytest.param(RegressDataModule, RegressionModel, marks=RunIf(sklearn=True)),
+        pytest.param(ClassifDataModule, ClassificationModel, marks=RunIf(sklearn=True, onnx=True)),
+        pytest.param(RegressDataModule, RegressionModel, marks=RunIf(sklearn=True, onnx=True)),
     ],
 )
-def test_models(tmpdir, data_class, model_class):
+def test_models(tmp_path, data_class, model_class):
     """Test simple models."""
     dm = data_class() if data_class else data_class
     model = model_class()
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=1)
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=1)
 
     trainer.fit(model, datamodule=dm)
 
@@ -47,4 +48,11 @@ def test_models(tmpdir, data_class, model_class):
 
     model.to_torchscript()
     if data_class:
-        model.to_onnx(os.path.join(tmpdir, "my-model.onnx"), input_sample=dm.sample)
+        model.to_onnx(os.path.join(tmp_path, "my-model.onnx"), input_sample=dm.sample)
+
+
+def test_tbptt(tmp_path):
+    model = TBPTTModule()
+
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=1)
+    trainer.fit(model)

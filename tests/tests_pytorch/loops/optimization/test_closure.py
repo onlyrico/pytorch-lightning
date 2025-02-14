@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,21 +14,19 @@
 import pytest
 import torch
 
-from pytorch_lightning import Trainer
-from pytorch_lightning.demos.boring_classes import BoringModel
-from pytorch_lightning.utilities.exceptions import MisconfigurationException
+from lightning.pytorch import Trainer
+from lightning.pytorch.demos.boring_classes import BoringModel
+from lightning.pytorch.utilities.exceptions import MisconfigurationException
 
 
-def test_optimizer_step_no_closure_raises(tmpdir):
+def test_optimizer_step_no_closure_raises(tmp_path):
     class TestModel(BoringModel):
-        def optimizer_step(
-            self, epoch=None, batch_idx=None, optimizer=None, optimizer_idx=None, optimizer_closure=None, **_
-        ):
+        def optimizer_step(self, epoch=None, batch_idx=None, optimizer=None, optimizer_closure=None, **_):
             # does not call `optimizer_closure()`
             pass
 
     model = TestModel()
-    trainer = Trainer(default_root_dir=tmpdir, fast_dev_run=1)
+    trainer = Trainer(default_root_dir=tmp_path, fast_dev_run=1)
     with pytest.raises(MisconfigurationException, match="The closure hasn't been executed"):
         trainer.fit(model)
 
@@ -42,6 +40,34 @@ def test_optimizer_step_no_closure_raises(tmpdir):
             return BrokenSGD(self.layer.parameters(), lr=0.1)
 
     model = TestModel()
-    trainer = Trainer(default_root_dir=tmpdir, fast_dev_run=1)
+    trainer = Trainer(default_root_dir=tmp_path, fast_dev_run=1)
     with pytest.raises(MisconfigurationException, match="The closure hasn't been executed"):
         trainer.fit(model)
+
+
+def test_closure_with_no_grad_optimizer(tmp_path):
+    """Test that the closure is guaranteed to run with grad enabled.
+
+    There are certain third-party library optimizers
+    (such as Hugging Face Transformers' AdamW) that set `no_grad` during the `step` operation.
+
+    """
+
+    class NoGradAdamW(torch.optim.AdamW):
+        @torch.no_grad()
+        def step(self, closure):
+            if closure is not None:
+                closure()
+            return super().step()
+
+    class TestModel(BoringModel):
+        def training_step(self, batch, batch_idx):
+            assert torch.is_grad_enabled()
+            return super().training_step(batch, batch_idx)
+
+        def configure_optimizers(self):
+            return NoGradAdamW(self.parameters(), lr=0.1)
+
+    trainer = Trainer(default_root_dir=tmp_path, fast_dev_run=1)
+    model = TestModel()
+    trainer.fit(model)

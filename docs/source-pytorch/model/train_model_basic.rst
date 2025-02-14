@@ -21,7 +21,7 @@ Add the relevant imports at the top of the file
     from torchvision import transforms
     from torchvision.datasets import MNIST
     from torch.utils.data import DataLoader
-    import pytorch_lightning as pl
+    import lightning as L
 
 ----
 
@@ -60,7 +60,7 @@ The LightningModule is the full **recipe** that defines how your nn.Modules inte
 
 .. code:: python
 
-    class LitAutoEncoder(pl.LightningModule):
+    class LitAutoEncoder(L.LightningModule):
         def __init__(self, encoder, decoder):
             super().__init__()
             self.encoder = encoder
@@ -68,7 +68,7 @@ The LightningModule is the full **recipe** that defines how your nn.Modules inte
 
         def training_step(self, batch, batch_idx):
             # training_step defines the train loop.
-            x, y = batch
+            x, _ = batch
             x = x.view(x.size(0), -1)
             z = self.encoder(x)
             x_hat = self.decoder(z)
@@ -104,7 +104,7 @@ To train the model use the Lightning :doc:`Trainer <../common/trainer>` which ha
     autoencoder = LitAutoEncoder(Encoder(), Decoder())
 
     # train model
-    trainer = pl.Trainer()
+    trainer = L.Trainer()
     trainer.fit(model=autoencoder, train_dataloaders=train_loader)
 
 ----

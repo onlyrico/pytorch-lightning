@@ -1,7 +1,0 @@
-:orphan:
-
-#######
-Logging
-#######
-
-Coming soon.

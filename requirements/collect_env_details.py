@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
 """Diagnose your system and show basic information.
 
 This server mainly to get detail info for better bug reporting.
+
 """
 
 import os
@@ -35,6 +36,7 @@ def info_system() -> dict:
         "OS": platform.system(),
         "architecture": platform.architecture(),
         "version": platform.version(),
+        "release": platform.release(),
         "processor": platform.processor(),
         "python": platform.python_version(),
     }
@@ -68,7 +70,7 @@ def nice_print(details: dict, level: int = 0) -> list:
             lines += [level * LEVEL_OFFSET + key]
             lines += [(level + 1) * LEVEL_OFFSET + "- " + v for v in details[k]]
         else:
-            template = "{:%is} {}" % KEY_PADDING
+            template = "{:%is} {}" % KEY_PADDING  # noqa: UP031
             key_val = template.format(key, details[k])
             lines += [(level * LEVEL_OFFSET) + key_val]
     return lines
@@ -79,7 +81,7 @@ def main() -> None:
     details["Lightning"] = {k: v for k, v in details["Packages"].items() if "torch" in k or "lightning" in k}
     lines = nice_print(details)
     text = os.linesep.join(lines)
-    print(text)
+    print(f"<details>\n  <summary>Current environment</summary>\n\n{text}\n\n</details>")
 
 
 if __name__ == "__main__":

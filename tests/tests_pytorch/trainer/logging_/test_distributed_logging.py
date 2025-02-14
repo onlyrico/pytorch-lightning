@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional, Union
 from unittest.mock import Mock
 
-import pytorch_lightning as pl
-from pytorch_lightning import Callback, Trainer
-from pytorch_lightning.demos.boring_classes import BoringModel
-from pytorch_lightning.loggers.logger import Logger
+import lightning.pytorch as pl
+from lightning.pytorch import Callback, Trainer
+from lightning.pytorch.demos.boring_classes import BoringModel
+from lightning.pytorch.loggers.logger import Logger
 from tests_pytorch.helpers.runif import RunIf
 
 
@@ -26,6 +26,7 @@ class AllRankLogger(Logger):
     """Logger to test all-rank logging (i.e. not just rank 0).
 
     Logs are saved to local variable `logs`.
+
     """
 
     def __init__(self):
@@ -36,7 +37,7 @@ class AllRankLogger(Logger):
     def experiment(self) -> Any:
         return self.exp
 
-    def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None):
+    def log_metrics(self, metrics: dict[str, float], step: Optional[int] = None):
         self.logs.update(metrics)
 
     def version(self) -> Union[int, str]:
@@ -60,7 +61,7 @@ class TestModel(BoringModel):
 
 
 @RunIf(skip_windows=True)
-def test_all_rank_logging_ddp_cpu(tmpdir):
+def test_all_rank_logging_ddp_cpu(tmp_path):
     """Check that all ranks can be logged from."""
     model = TestModel()
     all_rank_logger = AllRankLogger()
@@ -68,7 +69,7 @@ def test_all_rank_logging_ddp_cpu(tmpdir):
         accelerator="cpu",
         devices=2,
         strategy="ddp_spawn",
-        default_root_dir=tmpdir,
+        default_root_dir=tmp_path,
         limit_train_batches=1,
         limit_val_batches=1,
         max_epochs=1,
@@ -80,16 +81,15 @@ def test_all_rank_logging_ddp_cpu(tmpdir):
 
 
 @RunIf(min_cuda_gpus=2)
-def test_all_rank_logging_ddp_spawn(tmpdir):
+def test_all_rank_logging_ddp_spawn(tmp_path):
     """Check that all ranks can be logged from."""
     model = TestModel()
     all_rank_logger = AllRankLogger()
-    model.training_epoch_end = None
     trainer = Trainer(
         strategy="ddp_spawn",
         accelerator="gpu",
         devices=2,
-        default_root_dir=tmpdir,
+        default_root_dir=tmp_path,
         limit_train_batches=1,
         limit_val_batches=1,
         max_epochs=1,
@@ -99,10 +99,11 @@ def test_all_rank_logging_ddp_spawn(tmpdir):
     trainer.fit(model)
 
 
-def test_first_logger_call_in_subprocess(tmpdir):
+def test_first_logger_call_in_subprocess(tmp_path):
     """Test that the Trainer does not call the logger too early.
 
     Only when the worker processes are initialized do we have access to the rank and know which one is the main process.
+
     """
 
     class LoggerCallsObserver(Callback):
@@ -119,11 +120,11 @@ def test_first_logger_call_in_subprocess(tmpdir):
     logger = Mock()
     logger.version = "0"
     logger.name = "name"
-    logger.save_dir = tmpdir
+    logger.save_dir = tmp_path
 
     model = BoringModel()
     trainer = Trainer(
-        default_root_dir=tmpdir,
+        default_root_dir=tmp_path,
         limit_train_batches=1,
         limit_val_batches=1,
         max_epochs=1,
@@ -133,7 +134,7 @@ def test_first_logger_call_in_subprocess(tmpdir):
     trainer.fit(model)
 
 
-def test_logger_after_fit_predict_test_calls(tmpdir):
+def test_logger_after_fit_predict_test_calls(tmp_path):
     """Make sure logger outputs are finalized after fit, prediction, and test calls."""
 
     class BufferLogger(Logger):
@@ -142,7 +143,7 @@ def test_logger_after_fit_predict_test_calls(tmpdir):
             self.buffer = {}
             self.logs = {}
 
-        def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None) -> None:
+        def log_metrics(self, metrics: dict[str, float], step: Optional[int] = None) -> None:
             self.buffer.update(metrics)
 
         def finalize(self, status: str) -> None:
@@ -179,7 +180,7 @@ def test_logger_after_fit_predict_test_calls(tmpdir):
 
     model = BoringModel()
     trainer = Trainer(
-        default_root_dir=tmpdir,
+        default_root_dir=tmp_path,
         limit_train_batches=1,
         limit_val_batches=1,
         max_epochs=1,

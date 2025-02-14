@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,8 +13,8 @@
 # limitations under the License.
 import pytest
 
-from pytorch_lightning import Callback, Trainer
-from pytorch_lightning.demos.boring_classes import BoringModel
+from lightning.pytorch import Callback, Trainer
+from lightning.pytorch.demos.boring_classes import BoringModel
 from tests_pytorch.helpers.runif import RunIf
 
 
@@ -29,54 +29,54 @@ def _device_check_helper(batch_device, module_device):
 
 
 class BatchHookObserverCallback(Callback):
-    def on_train_batch_start(self, trainer, pl_module, batch, *args):
+    def on_train_batch_start(self, trainer, pl_module, batch, *_):
         _device_check_helper(batch.device, pl_module.device)
 
-    def on_train_batch_end(self, trainer, pl_module, outputs, batch, *args):
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, *_):
         _device_check_helper(batch.device, pl_module.device)
 
-    def on_validation_batch_start(self, trainer, pl_module, batch, *args):
+    def on_validation_batch_start(self, trainer, pl_module, batch, *_):
         _device_check_helper(batch.device, pl_module.device)
 
-    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, *args):
+    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, *_):
         _device_check_helper(batch.device, pl_module.device)
 
-    def on_test_batch_start(self, trainer, pl_module, batch, *args):
+    def on_test_batch_start(self, trainer, pl_module, batch, *_):
         _device_check_helper(batch.device, pl_module.device)
 
-    def on_test_batch_end(self, trainer, pl_module, outputs, batch, *args):
+    def on_test_batch_end(self, trainer, pl_module, outputs, batch, *_):
         _device_check_helper(batch.device, pl_module.device)
 
-    def on_predict_batch_start(self, trainer, pl_module, batch, *args):
+    def on_predict_batch_start(self, trainer, pl_module, batch, *_):
         _device_check_helper(batch.device, pl_module.device)
 
-    def on_predict_batch_end(self, trainer, pl_module, outputs, batch, *args):
+    def on_predict_batch_end(self, trainer, pl_module, outputs, batch, *_):
         _device_check_helper(batch.device, pl_module.device)
 
 
 class BatchHookObserverModel(BoringModel):
-    def on_train_batch_start(self, batch, *args):
+    def on_train_batch_start(self, batch, *_):
         _device_check_helper(batch.device, self.device)
 
-    def on_train_batch_end(self, outputs, batch, *args):
+    def on_train_batch_end(self, outputs, batch, *_):
         _device_check_helper(batch.device, self.device)
 
-    def on_validation_batch_start(self, batch, *args):
+    def on_validation_batch_start(self, batch, *_):
         _device_check_helper(batch.device, self.device)
 
-    def on_validation_batch_end(self, outputs, batch, *args):
+    def on_validation_batch_end(self, outputs, batch, *_):
         _device_check_helper(batch.device, self.device)
 
-    def on_test_batch_start(self, batch, *args):
+    def on_test_batch_start(self, batch, *_):
         _device_check_helper(batch.device, self.device)
 
-    def on_test_batch_end(self, outputs, batch, *args):
+    def on_test_batch_end(self, outputs, batch, *_):
         _device_check_helper(batch.device, self.device)
 
-    def on_predict_batch_start(self, batch, *args):
+    def on_predict_batch_start(self, batch, *_):
         _device_check_helper(batch.device, self.device)
 
-    def on_predict_batch_end(self, outputs, batch, *args):
+    def on_predict_batch_end(self, outputs, batch, *_):
         _device_check_helper(batch.device, self.device)
 
 
@@ -87,14 +87,13 @@ class BatchHookObserverModel(BoringModel):
         pytest.param("mps", marks=RunIf(mps=True)),
     ],
 )
-def test_callback_batch_on_device(tmpdir, accelerator):
+def test_callback_batch_on_device(tmp_path, accelerator):
     """Test that the batch object sent to the on_*_batch_start/end hooks is on the right device."""
-
     batch_callback = BatchHookObserverCallback()
 
     model = BatchHookObserverModel()
     trainer = Trainer(
-        default_root_dir=tmpdir,
+        default_root_dir=tmp_path,
         max_steps=1,
         limit_train_batches=1,
         limit_val_batches=1,

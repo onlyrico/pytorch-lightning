@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,9 @@
 
 import torch
 import torch.nn as nn
-from tests_fabric.helpers.models import BoringFabric
+
+from lightning.fabric import Fabric
+from tests_fabric.helpers.runif import RunIf
 
 
 class BoringDoubleModule(nn.Module):
@@ -31,24 +33,24 @@ class BoringDoubleModule(nn.Module):
         return self.layer(x)
 
 
-class DoublePrecisionBoringFabric(BoringFabric):
-    def get_model(self):
-        return BoringDoubleModule()
-
-    def step(self, model, batch):
-        assert model.layer.weight.dtype == model.layer.bias.dtype == torch.float64
-        assert model.complex_buffer.dtype == torch.complex64
-
-        assert batch.dtype == torch.float32
-        output = model(batch)
-        assert output.dtype == torch.float32
-        loss = torch.nn.functional.mse_loss(output, torch.ones_like(output))
-        return loss
-
-    def after_backward(self, model):
-        assert model.layer.weight.grad.dtype == torch.float64
-
-
+@RunIf(mps=False)  # MPS doesn't support float64
 def test_double_precision():
-    fabric = DoublePrecisionBoringFabric(precision=64)
-    fabric.run()
+    fabric = Fabric(devices=1, precision="64-true")
+
+    with fabric.init_module():
+        model = BoringDoubleModule()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
+    model, optimizer = fabric.setup(model, optimizer)
+
+    batch = torch.rand(2, 32, device=fabric.device)
+    assert model.layer.weight.dtype == model.layer.bias.dtype == torch.float64
+    assert model.complex_buffer.dtype == torch.complex128
+
+    assert batch.dtype == torch.float32
+    output = model(batch)
+    assert output.dtype == torch.float32
+    loss = torch.nn.functional.mse_loss(output, torch.ones_like(output))
+    fabric.backward(loss)
+    assert model.layer.weight.grad.dtype == torch.float64
+    optimizer.step()
+    optimizer.zero_grad()

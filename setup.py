@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ installation for all packages.
 
 There are considered three main scenarios for installing this project:
 
-1. Using PyPI registry when you can install `pytorch-lightning`, `lightning-app`, etc. or `lightning` for all.
+1. Using PyPI registry when you can install `pytorch-lightning`, etc. or `lightning` for all.
 
 2. Installation from source code after cloning repository.
     In such case we recommend to use command `pip install .` or `pip install -e .` for development version
@@ -26,26 +26,29 @@ There are considered three main scenarios for installing this project:
 
      - for `pytorch-lightning` use `export PACKAGE_NAME=pytorch ; pip install .`
      - for `lightning-fabric` use `export PACKAGE_NAME=fabric ; pip install .`
-     - for `lightning-app` use `export PACKAGE_NAME=app ; pip install .`
 
 3. Building packages as sdist or binary wheel and installing or publish to PyPI afterwords you use command
     `python setup.py sdist` or `python setup.py bdist_wheel` accordingly.
    In case you want to build just a particular package you want to set an environment variable:
-   `PACKAGE_NAME=lightning|pytorch|app|fabric python setup.py sdist|bdist_wheel`
+   `PACKAGE_NAME=lightning|pytorch|fabric python setup.py sdist|bdist_wheel`
 
 4. Automated releasing with GitHub action is natural extension of 3) is composed of three consecutive steps:
     a) determine which packages shall be released based on version increment in `__version__.py` and eventually
      compared against PyPI registry
     b) with a parameterization build desired packages in to standard `dist/` folder
     c) validate packages and publish to PyPI
+
 """
+
 import contextlib
 import glob
+import logging
 import os
 import tempfile
+from collections.abc import Generator, Mapping
 from importlib.util import module_from_spec, spec_from_file_location
 from types import ModuleType
-from typing import Generator, Optional
+from typing import Optional
 
 import setuptools
 import setuptools.command.egg_info
@@ -54,7 +57,6 @@ _PACKAGE_NAME = os.environ.get("PACKAGE_NAME")
 _PACKAGE_MAPPING = {
     "lightning": "lightning",
     "pytorch": "pytorch_lightning",
-    "app": "lightning_app",
     "fabric": "lightning_fabric",
 }
 # https://packaging.python.org/guides/single-sourcing-package-version/
@@ -62,7 +64,7 @@ _PACKAGE_MAPPING = {
 _PATH_ROOT = os.path.dirname(__file__)
 _PATH_SRC = os.path.join(_PATH_ROOT, "src")
 _PATH_REQUIRE = os.path.join(_PATH_ROOT, "requirements")
-_FREEZE_REQUIREMENTS = bool(int(os.environ.get("FREEZE_REQUIREMENTS", 0)))
+_FREEZE_REQUIREMENTS = os.environ.get("FREEZE_REQUIREMENTS", "0").lower() in ("1", "true")
 
 
 def _load_py_module(name: str, location: str) -> ModuleType:
@@ -83,12 +85,11 @@ def _named_temporary_file(directory: Optional[str] = None) -> str:
 
 
 @contextlib.contextmanager
-def _set_manifest_path(manifest_dir: str, aggregate: bool = False) -> Generator:
+def _set_manifest_path(manifest_dir: str, aggregate: bool = False, mapping: Mapping = _PACKAGE_MAPPING) -> Generator:
     if aggregate:
         # aggregate all MANIFEST.in contents into a single temporary file
         manifest_path = _named_temporary_file(manifest_dir)
-        mapping = _PACKAGE_MAPPING.copy()
-        lines = ["include src/lightning/version.info\n", "include requirements/base.txt\n"]
+        lines = []
         # load manifest and aggregated all manifests
         for pkg in mapping.values():
             pkg_manifest = os.path.join(_PATH_SRC, pkg, "MANIFEST.in")
@@ -101,6 +102,7 @@ def _set_manifest_path(manifest_dir: str, aggregate: bool = False) -> Generator:
                 continue  # avoid `lightning` -> `lightning/lightning`
             lines = [ln.replace(old, f"lightning/{new}") for ln in lines]
         lines = sorted(set(filter(lambda ln: not ln.strip().startswith("#"), lines)))
+        logging.debug(f"aggregated manifest consists of: {lines}")
         with open(manifest_path, mode="w") as fp:
             fp.writelines(lines)
     else:
@@ -108,7 +110,7 @@ def _set_manifest_path(manifest_dir: str, aggregate: bool = False) -> Generator:
         assert os.path.exists(manifest_path)
     # avoid error: setup script specifies an absolute path
     manifest_path = os.path.relpath(manifest_path, _PATH_ROOT)
-    print("Set manifest path to", manifest_path)
+    logging.info("Set manifest path to", manifest_path)
     setuptools.command.egg_info.manifest_maker.template = manifest_path
     yield
     # cleanup
@@ -139,9 +141,10 @@ if __name__ == "__main__":
                 f"Unexpected package name: {_PACKAGE_NAME}. Possible choices are: {list(_PACKAGE_MAPPING)}"
             )
         package_to_install = _PACKAGE_MAPPING.get(_PACKAGE_NAME, "lightning")
-        if package_to_install == "lightning":  # install everything
+        if package_to_install == "lightning":
             # merge all requirements files
             assistant._load_aggregate_requirements(_PATH_REQUIRE, _FREEZE_REQUIREMENTS)
+        else:
             # replace imports and copy the code
             assistant.create_mirror_package(_PATH_SRC, _PACKAGE_MAPPING)
     else:

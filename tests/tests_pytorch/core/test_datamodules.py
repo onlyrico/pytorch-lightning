@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,23 +11,30 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 import pickle
-from argparse import ArgumentParser, Namespace
+from argparse import Namespace
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any
 from unittest import mock
-from unittest.mock import call, Mock, PropertyMock
+from unittest.mock import Mock, PropertyMock, call
 
 import pytest
 import torch
 
-from pytorch_lightning import LightningDataModule, seed_everything, Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.demos.boring_classes import BoringDataModule, BoringModel
-from pytorch_lightning.profilers.simple import SimpleProfiler
-from pytorch_lightning.trainer.states import TrainerFn
-from pytorch_lightning.utilities import _OMEGACONF_AVAILABLE, AttributeDict
-from pytorch_lightning.utilities.exceptions import MisconfigurationException
+from lightning.pytorch import LightningDataModule, Trainer, seed_everything
+from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.demos.boring_classes import (
+    BoringDataModule,
+    BoringDataModuleNoLen,
+    BoringModel,
+    IterableBoringDataModule,
+)
+from lightning.pytorch.profilers.simple import SimpleProfiler
+from lightning.pytorch.trainer.states import TrainerFn
+from lightning.pytorch.utilities import AttributeDict
+from lightning.pytorch.utilities.exceptions import MisconfigurationException
+from lightning.pytorch.utilities.imports import _OMEGACONF_AVAILABLE
 from tests_pytorch.helpers.datamodules import ClassifDataModule
 from tests_pytorch.helpers.runif import RunIf
 from tests_pytorch.helpers.simple_models import ClassificationModel
@@ -36,10 +43,16 @@ if _OMEGACONF_AVAILABLE:
     from omegaconf import OmegaConf
 
 
-@mock.patch("pytorch_lightning.trainer.trainer.Trainer.node_rank", new_callable=PropertyMock)
-@mock.patch("pytorch_lightning.trainer.trainer.Trainer.local_rank", new_callable=PropertyMock)
+@mock.patch("lightning.pytorch.trainer.trainer.Trainer.node_rank", new_callable=PropertyMock)
+@mock.patch("lightning.pytorch.trainer.trainer.Trainer.local_rank", new_callable=PropertyMock)
 def test_can_prepare_data(local_rank, node_rank):
-    dm = Mock(spec=LightningDataModule)
+    class MyDataModule(LightningDataModule):
+        def prepare_data(self):
+            pass
+
+    dm = MyDataModule()
+    dm.prepare_data = Mock(wraps=dm.prepare_data)
+
     dm.prepare_data_per_node = True
     trainer = Trainer()
     trainer.datamodule = dm
@@ -55,7 +68,7 @@ def test_can_prepare_data(local_rank, node_rank):
     dm.prepare_data.assert_called_once()
 
     # local rank = 1   (False)
-    dm.reset_mock()
+    dm.prepare_data.reset_mock()
     local_rank.return_value = 1
     assert trainer.local_rank == 1
 
@@ -64,7 +77,7 @@ def test_can_prepare_data(local_rank, node_rank):
 
     # prepare_data_per_node = False (prepare across all nodes)
     # global rank = 0   (True)
-    dm.reset_mock()
+    dm.prepare_data.reset_mock()
     dm.prepare_data_per_node = False
     node_rank.return_value = 0
     local_rank.return_value = 0
@@ -73,7 +86,7 @@ def test_can_prepare_data(local_rank, node_rank):
     dm.prepare_data.assert_called_once()
 
     # global rank = 1   (False)
-    dm.reset_mock()
+    dm.prepare_data.reset_mock()
     node_rank.return_value = 1
     local_rank.return_value = 0
 
@@ -99,7 +112,7 @@ def test_can_prepare_data(local_rank, node_rank):
 
 def test_hooks_no_recursion_error():
     # hooks were appended in cascade every tine a new data module was instantiated leading to a recursion error.
-    # See https://github.com/Lightning-AI/lightning/issues/3652
+    # See https://github.com/Lightning-AI/pytorch-lightning/issues/3652
     class DummyDM(LightningDataModule):
         def setup(self, *args, **kwargs):
             pass
@@ -132,43 +145,22 @@ class DataDirDataModule(BoringDataModule):
         self.data_dir = data_dir
 
 
-def test_dm_add_argparse_args(tmpdir):
-    parser = ArgumentParser()
-    parser = DataDirDataModule.add_argparse_args(parser)
-    args = parser.parse_args(["--data_dir", str(tmpdir)])
-    assert args.data_dir == str(tmpdir)
-
-
-def test_dm_init_from_argparse_args(tmpdir):
-    parser = ArgumentParser()
-    parser = DataDirDataModule.add_argparse_args(parser)
-    args = parser.parse_args(["--data_dir", str(tmpdir)])
-    dm = DataDirDataModule.from_argparse_args(args)
-    dm.prepare_data()
-    dm.setup("fit")
-    assert dm.data_dir == args.data_dir == str(tmpdir)
-
-
 def test_dm_pickle_after_init():
     dm = BoringDataModule()
     pickle.dumps(dm)
 
 
 @RunIf(sklearn=True)
-def test_train_loop_only(tmpdir):
+def test_train_loop_only(tmp_path):
     seed_everything(7)
 
     dm = ClassifDataModule()
     model = ClassificationModel()
 
     model.validation_step = None
-    model.validation_step_end = None
-    model.validation_epoch_end = None
     model.test_step = None
-    model.test_step_end = None
-    model.test_epoch_end = None
 
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=1, enable_model_summary=False)
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=1, enable_model_summary=False)
 
     # fit model
     trainer.fit(model, datamodule=dm)
@@ -177,17 +169,15 @@ def test_train_loop_only(tmpdir):
 
 
 @RunIf(sklearn=True)
-def test_train_val_loop_only(tmpdir):
+def test_train_val_loop_only(tmp_path):
     seed_everything(7)
 
     dm = ClassifDataModule()
     model = ClassificationModel()
 
     model.validation_step = None
-    model.validation_step_end = None
-    model.validation_epoch_end = None
 
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=1, enable_model_summary=False)
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=1, enable_model_summary=False)
 
     # fit model
     trainer.fit(model, datamodule=dm)
@@ -195,7 +185,7 @@ def test_train_val_loop_only(tmpdir):
     assert trainer.callback_metrics["train_loss"] < 1.1
 
 
-def test_dm_checkpoint_save_and_load(tmpdir):
+def test_dm_checkpoint_save_and_load(tmp_path):
     class CustomBoringModel(BoringModel):
         def validation_step(self, batch, batch_idx):
             out = super().validation_step(batch, batch_idx)
@@ -203,45 +193,45 @@ def test_dm_checkpoint_save_and_load(tmpdir):
             return out
 
     class CustomBoringDataModule(BoringDataModule):
-        def state_dict(self) -> Dict[str, Any]:
+        def state_dict(self) -> dict[str, Any]:
             return {"my": "state_dict"}
 
-        def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        def load_state_dict(self, state_dict: dict[str, Any]) -> None:
             self.my_state_dict = state_dict
 
     dm = CustomBoringDataModule()
     model = CustomBoringModel()
 
     trainer = Trainer(
-        default_root_dir=tmpdir,
+        default_root_dir=tmp_path,
         max_epochs=1,
         limit_train_batches=2,
         limit_val_batches=1,
         enable_model_summary=False,
-        callbacks=[ModelCheckpoint(dirpath=tmpdir, monitor="early_stop_on")],
+        callbacks=[ModelCheckpoint(dirpath=tmp_path, monitor="early_stop_on")],
     )
 
     # fit model
     trainer.fit(model, datamodule=dm)
     checkpoint_path = list(trainer.checkpoint_callback.best_k_models.keys())[0]
-    checkpoint = torch.load(checkpoint_path)
+    checkpoint = torch.load(checkpoint_path, weights_only=True)
     assert dm.__class__.__qualname__ in checkpoint
     assert checkpoint[dm.__class__.__qualname__] == {"my": "state_dict"}
 
     for trainer_fn in TrainerFn:
         trainer.state.fn = trainer_fn
-        trainer._restore_modules_and_callbacks(checkpoint_path)
+        trainer._checkpoint_connector._restore_modules_and_callbacks(checkpoint_path)
         assert dm.my_state_dict == {"my": "state_dict"}
 
 
-@RunIf(sklearn=True)
-def test_full_loop(tmpdir):
+@RunIf(sklearn=True, skip_windows=True)  # Flaky test on Windows for unknown reasons
+def test_full_loop(tmp_path):
     seed_everything(7)
 
     dm = ClassifDataModule()
     model = ClassificationModel()
 
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=1, enable_model_summary=False, deterministic=True)
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=1, enable_model_summary=False, deterministic="warn")
 
     # fit model
     trainer.fit(model, dm)
@@ -259,9 +249,8 @@ def test_full_loop(tmpdir):
     assert result[0]["test_acc"] > 0.57
 
 
-def test_dm_reload_dataloaders_every_n_epochs(tmpdir):
-    """Test datamodule, where trainer argument reload_dataloaders_every_n_epochs is set to a non negative
-    integer."""
+def test_dm_reload_dataloaders_every_n_epochs(tmp_path):
+    """Test datamodule, where trainer argument reload_dataloaders_every_n_epochs is set to a non negative integer."""
 
     class CustomBoringDataModule(BoringDataModule):
         def __init__(self):
@@ -277,13 +266,11 @@ def test_dm_reload_dataloaders_every_n_epochs(tmpdir):
     model = BoringModel()
 
     model.validation_step = None
-    model.validation_step_end = None
-    model.validation_epoch_end = None
     model.test_step = None
-    model.test_step_end = None
-    model.test_epoch_end = None
 
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=3, limit_train_batches=2, reload_dataloaders_every_n_epochs=2)
+    trainer = Trainer(
+        default_root_dir=tmp_path, max_epochs=3, limit_train_batches=2, reload_dataloaders_every_n_epochs=2
+    )
     trainer.fit(model, dm)
 
 
@@ -300,13 +287,13 @@ class DummyIDS(torch.utils.data.IterableDataset):
         yield 1
 
 
-@pytest.mark.parametrize("iterable", (False, True))
+@pytest.mark.parametrize("iterable", [False, True])
 def test_dm_init_from_datasets_dataloaders(iterable):
     ds = DummyIDS if iterable else DummyDS
 
     train_ds = ds()
     dm = LightningDataModule.from_datasets(train_ds, batch_size=4, num_workers=0)
-    with mock.patch("pytorch_lightning.core.datamodule.DataLoader") as dl_mock:
+    with mock.patch("lightning.pytorch.core.datamodule.DataLoader") as dl_mock:
         dm.train_dataloader()
         dl_mock.assert_called_once_with(train_ds, batch_size=4, shuffle=not iterable, num_workers=0, pin_memory=True)
     with pytest.raises(MisconfigurationException, match="`val_dataloader` must be implemented"):
@@ -316,14 +303,12 @@ def test_dm_init_from_datasets_dataloaders(iterable):
 
     train_ds_sequence = [ds(), ds()]
     dm = LightningDataModule.from_datasets(train_ds_sequence, batch_size=4, num_workers=0)
-    with mock.patch("pytorch_lightning.core.datamodule.DataLoader") as dl_mock:
+    with mock.patch("lightning.pytorch.core.datamodule.DataLoader") as dl_mock:
         dm.train_dataloader()
-        dl_mock.assert_has_calls(
-            [
-                call(train_ds_sequence[0], batch_size=4, shuffle=not iterable, num_workers=0, pin_memory=True),
-                call(train_ds_sequence[1], batch_size=4, shuffle=not iterable, num_workers=0, pin_memory=True),
-            ]
-        )
+        dl_mock.assert_has_calls([
+            call(train_ds_sequence[0], batch_size=4, shuffle=not iterable, num_workers=0, pin_memory=True),
+            call(train_ds_sequence[1], batch_size=4, shuffle=not iterable, num_workers=0, pin_memory=True),
+        ])
     with pytest.raises(MisconfigurationException, match="`val_dataloader` must be implemented"):
         _ = dm.val_dataloader()
     with pytest.raises(MisconfigurationException, match="`test_dataloader` must be implemented"):
@@ -332,7 +317,7 @@ def test_dm_init_from_datasets_dataloaders(iterable):
     valid_ds = ds()
     test_ds = ds()
     dm = LightningDataModule.from_datasets(val_dataset=valid_ds, test_dataset=test_ds, batch_size=2, num_workers=0)
-    with mock.patch("pytorch_lightning.core.datamodule.DataLoader") as dl_mock:
+    with mock.patch("lightning.pytorch.core.datamodule.DataLoader") as dl_mock:
         dm.val_dataloader()
         dl_mock.assert_called_with(valid_ds, batch_size=2, shuffle=False, num_workers=0, pin_memory=True)
         dm.test_dataloader()
@@ -344,26 +329,25 @@ def test_dm_init_from_datasets_dataloaders(iterable):
     test_dss = [ds(), ds()]
     predict_dss = [ds(), ds()]
     dm = LightningDataModule.from_datasets(train_ds, valid_dss, test_dss, predict_dss, batch_size=4, num_workers=0)
-    with mock.patch("pytorch_lightning.core.datamodule.DataLoader") as dl_mock:
+    with mock.patch("lightning.pytorch.core.datamodule.DataLoader") as dl_mock:
         dm.val_dataloader()
         dm.test_dataloader()
         dm.predict_dataloader()
-        dl_mock.assert_has_calls(
-            [
-                call(valid_dss[0], batch_size=4, shuffle=False, num_workers=0, pin_memory=True),
-                call(valid_dss[1], batch_size=4, shuffle=False, num_workers=0, pin_memory=True),
-                call(test_dss[0], batch_size=4, shuffle=False, num_workers=0, pin_memory=True),
-                call(test_dss[1], batch_size=4, shuffle=False, num_workers=0, pin_memory=True),
-                call(predict_dss[0], batch_size=4, shuffle=False, num_workers=0, pin_memory=True),
-                call(predict_dss[1], batch_size=4, shuffle=False, num_workers=0, pin_memory=True),
-            ]
-        )
+        dl_mock.assert_has_calls([
+            call(valid_dss[0], batch_size=4, shuffle=False, num_workers=0, pin_memory=True),
+            call(valid_dss[1], batch_size=4, shuffle=False, num_workers=0, pin_memory=True),
+            call(test_dss[0], batch_size=4, shuffle=False, num_workers=0, pin_memory=True),
+            call(test_dss[1], batch_size=4, shuffle=False, num_workers=0, pin_memory=True),
+            call(predict_dss[0], batch_size=4, shuffle=False, num_workers=0, pin_memory=True),
+            call(predict_dss[1], batch_size=4, shuffle=False, num_workers=0, pin_memory=True),
+        ])
 
 
 def test_dm_init_from_datasets_with_init_params():
     """Test that extra kwargs can be passed down to the init via the ``LightningDataModule.from_datasets`` method.
 
     The two special arguments batch_size and num_workers get passed down depending on whether the __init__ accepts them.
+
     """
     # No additional parameters
     LightningDataModule.from_datasets(DummyDS(), batch_size=4, num_workers=2)
@@ -474,11 +458,12 @@ def test_define_as_dataclass():
 
 
 @RunIf(skip_windows=True)  # TODO: all durations are 0 on Windows
-def test_datamodule_hooks_are_profiled():
+def test_datamodule_hooks_are_profiled(tmp_path):
     """Test that `LightningDataModule` hooks are profiled."""
 
     def get_trainer():
-        trainer = Trainer(
+        return Trainer(
+            default_root_dir=tmp_path,
             max_steps=1,
             limit_val_batches=0,
             profiler="simple",
@@ -486,11 +471,14 @@ def test_datamodule_hooks_are_profiled():
             enable_progress_bar=False,
             logger=False,
         )
-        return trainer
 
     class CustomBoringDataModule(BoringDataModule):
         def state_dict(self):
             return {"temp": 1}
+
+        # override so that it gets called
+        def prepare_data(self):
+            pass
 
     model = BoringModel()
     dm = CustomBoringDataModule()
@@ -528,3 +516,107 @@ def test_datamodule_hooks_are_profiled():
         durations = profiler.recorded_durations[key]
         assert len(durations) == 1
         assert durations[0] > 0
+
+
+def test_datamodule_string_not_available():
+    dm = BoringDataModule()
+
+    expected_output = (
+        f"{{Train dataloader: None}}{os.linesep}"
+        f"{{Validation dataloader: None}}{os.linesep}"
+        f"{{Test dataloader: None}}{os.linesep}"
+        f"{{Predict dataloader: None}}"
+    )
+    out = str(dm)
+
+    assert out == expected_output
+
+
+def test_datamodule_string_fit_setup():
+    dm = BoringDataModule()
+    dm.setup(stage="fit")
+
+    expected_output = (
+        f"{{Train dataloader: size=64}}{os.linesep}"
+        f"{{Validation dataloader: size=64}}{os.linesep}"
+        f"{{Test dataloader: None}}{os.linesep}"
+        f"{{Predict dataloader: None}}"
+    )
+    output = str(dm)
+
+    assert expected_output == output
+
+
+def test_datamodule_string_validation_setup():
+    dm = BoringDataModule()
+    dm.setup(stage="validate")
+
+    expected_output = (
+        f"{{Train dataloader: None}}{os.linesep}"
+        f"{{Validation dataloader: size=64}}{os.linesep}"
+        f"{{Test dataloader: None}}{os.linesep}"
+        f"{{Predict dataloader: None}}"
+    )
+    output = str(dm)
+
+    assert expected_output == output
+
+
+def test_datamodule_string_test_setup():
+    dm = BoringDataModule()
+    dm.setup(stage="test")
+
+    expected_output = (
+        f"{{Train dataloader: None}}{os.linesep}"
+        f"{{Validation dataloader: None}}{os.linesep}"
+        f"{{Test dataloader: size=64}}{os.linesep}"
+        f"{{Predict dataloader: None}}"
+    )
+    output = str(dm)
+
+    assert expected_output == output
+
+
+def test_datamodule_string_predict_setup():
+    dm = BoringDataModule()
+    dm.setup(stage="predict")
+
+    expected_output = (
+        f"{{Train dataloader: None}}{os.linesep}"
+        f"{{Validation dataloader: None}}{os.linesep}"
+        f"{{Test dataloader: None}}{os.linesep}"
+        f"{{Predict dataloader: size=64}}"
+    )
+    output = str(dm)
+
+    assert expected_output == output
+
+
+def test_datamodule_string_no_len():
+    dm = BoringDataModuleNoLen()
+    dm.setup("fit")
+
+    expected_output = (
+        f"{{Train dataloader: size=NA}}{os.linesep}"
+        f"{{Validation dataloader: size=NA}}{os.linesep}"
+        f"{{Test dataloader: None}}{os.linesep}"
+        f"{{Predict dataloader: None}}"
+    )
+    output = str(dm)
+
+    assert output == expected_output
+
+
+def test_datamodule_string_iterable():
+    dm = IterableBoringDataModule()
+    dm.setup("fit")
+
+    expected_output = (
+        f"{{Train dataloader: 1. size=16 ; 2. size=NA}}{os.linesep}"
+        f"{{Validation dataloader: 1. size=32 ; 2. size=NA}}{os.linesep}"
+        f"{{Test dataloader: None}}{os.linesep}"
+        f"{{Predict dataloader: None}}"
+    )
+    output = str(dm)
+
+    assert output == expected_output

@@ -5,13 +5,15 @@ Run on an on-prem cluster (intermediate)
 ########################################
 **Audience**: Users who need to run on an academic or enterprise private cluster.
 
+
 ----
+
 
 .. _non-slurm:
 
-*****************
-Setup the cluster
-*****************
+******************
+Set up the cluster
+******************
 This guide shows how to run a training job on a general purpose cluster. We recommend beginners to try this method
 first because it requires the least amount of configuration and changes to the code.
 To setup a multi-node computing cluster you need:
@@ -29,11 +31,13 @@ PyTorch Lightning follows the design of `PyTorch distributed communication packa
 
 .. _training_script_setup:
 
+
 ----
 
-*************************
-Setup the training script
-*************************
+
+**************************
+Set up the training script
+**************************
 To train a model using multiple nodes, do the following:
 
 1.  Design your :ref:`lightning_module` (no need to add anything specific here).
@@ -45,7 +49,9 @@ To train a model using multiple nodes, do the following:
        # train on 32 GPUs across 4 nodes
        trainer = Trainer(accelerator="gpu", devices=8, num_nodes=4, strategy="ddp")
 
+
 ----
+
 
 ***************************
 Submit a job to the cluster
@@ -57,7 +63,9 @@ This means that you need to:
 2. Copy all your import dependencies and the script itself to each node.
 3. Run the script on each node.
 
+
 ----
+
 
 ******************
 Debug on a cluster
@@ -68,32 +76,3 @@ Set the ``NCCL_DEBUG=INFO`` environment variable to see the ACTUAL error.
 .. code-block:: bash
 
     NCCL_DEBUG=INFO python train.py ...
-
-----
-
-********
-Get help
-********
-Setting up a cluster for distributed training is not trivial. Lightning offers lightning-grid which allows you to configure a cluster easily and run experiments via the CLI and web UI.
-
-Try it out for free today:
-
-.. raw:: html
-
-    <div class="display-card-container">
-        <div class="row">
-
-.. Add callout items below this line
-
-.. displayitem::
-   :header: Train models on the cloud
-   :description: Learn to run a model in the background on a cloud machine.
-   :col_css: col-md-6
-   :button_link: cloud_training.html
-   :height: 150
-   :tag: intermediate
-
-.. raw:: html
-
-        </div>
-    </div

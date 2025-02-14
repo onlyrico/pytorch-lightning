@@ -6,28 +6,30 @@ on:
     branches: [master, "release/*"]
   pull_request:
     branches: [master, "release/*"]
-    types: [opened, reopened, ready_for_review, synchronize]  # added `ready_for_review` since draft is skipped
+    types: [opened, reopened, ready_for_review, synchronize] # added `ready_for_review` since draft is skipped
     paths:
-      - ".actions/**"
+      - ".actions/*"
+      - "requirements/ci.txt"
       - "requirements/pytorch/**"
-      - "src/pytorch_lightning/**"
+      - "src/lightning/pytorch/**"
+      - "src/pytorch_lightning/*"
       - "tests/tests_pytorch/**"
-      - "tests/legacy/back-compatible-versions.txt"
-      - "setup.cfg"  # includes pytest config
+      - "tests/legacy/**"
+      - "pyproject.toml" # includes pytest config
       - ".github/workflows/ci-tests-pytorch.yml"
       - "requirements/fabric/**"
-      - "src/lightning_fabric/**"
+      - "src/lightning/fabric/**"
+      - "src/lightning_fabric/*"
       - "!requirements/pytorch/docs.txt"
       - "!*.md"
       - "!**/*.md"
+  schedule:
+    # At the end of every day
+    - cron: "0 0 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref }}
-  cancel-in-progress: ${{ ! (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/release/')) }}
-
-env:
-  PACKAGE_NAME: pytorch
-  FREEZE_REQUIREMENTS: 1
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
@@ -41,180 +43,183 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # assign python and pytorch version combinations to operating systems (arbitrarily)
-          # note: there's no distribution of torch==1.10 for Python>=3.10
-          - {os: "macOS-11", pkg-name: "pytorch", python-version: "3.8", pytorch-version: "1.11"}
-          - {os: "macOS-11", pkg-name: "pytorch", python-version: "3.9", pytorch-version: "1.12"}
-          - {os: "ubuntu-20.04", pkg-name: "pytorch", python-version: "3.8", pytorch-version: "1.10"}
-          - {os: "ubuntu-20.04", pkg-name: "pytorch", python-version: "3.9", pytorch-version: "1.11"}
-          - {os: "ubuntu-20.04", pkg-name: "pytorch", python-version: "3.10", pytorch-version: "1.12"}
-          - {os: "windows-2022", pkg-name: "pytorch", python-version: "3.9", pytorch-version: "1.11"}
-          - {os: "windows-2022", pkg-name: "pytorch", python-version: "3.10", pytorch-version: "1.12"}
-          # only run PyTorch latest with Python latest
-          - {os: "macOS-11", pkg-name: "pytorch", python-version: "3.10", pytorch-version: "1.13"}
-          - {os: "ubuntu-20.04", pkg-name: "pytorch", python-version: "3.10", pytorch-version: "1.13"}
-          - {os: "windows-2022", pkg-name: "pytorch", python-version: "3.10", pytorch-version: "1.13"}
+          # only run PyTorch latest
+          - { os: "macOS-14", pkg-name: "lightning", python-version: "3.10", pytorch-version: "2.1" }
+          - { os: "ubuntu-20.04", pkg-name: "lightning", python-version: "3.10", pytorch-version: "2.1" }
+          - { os: "windows-2022", pkg-name: "lightning", python-version: "3.10", pytorch-version: "2.1" }
+          - { os: "macOS-14", pkg-name: "lightning", python-version: "3.11", pytorch-version: "2.2.2" }
+          - { os: "ubuntu-20.04", pkg-name: "lightning", python-version: "3.11", pytorch-version: "2.2.2" }
+          - { os: "windows-2022", pkg-name: "lightning", python-version: "3.11", pytorch-version: "2.2.2" }
+          - { os: "macOS-14", pkg-name: "lightning", python-version: "3.11", pytorch-version: "2.3" }
+          - { os: "ubuntu-20.04", pkg-name: "lightning", python-version: "3.11", pytorch-version: "2.3" }
+          - { os: "windows-2022", pkg-name: "lightning", python-version: "3.11", pytorch-version: "2.3" }
+          - { os: "macOS-14", pkg-name: "lightning", python-version: "3.12.7", pytorch-version: "2.4.1" }
+          - { os: "ubuntu-22.04", pkg-name: "lightning", python-version: "3.12.7", pytorch-version: "2.4.1" }
+          - { os: "windows-2022", pkg-name: "lightning", python-version: "3.12.7", pytorch-version: "2.4.1" }
+          - { os: "macOS-14", pkg-name: "lightning", python-version: "3.12.7", pytorch-version: "2.5.1" }
+          - { os: "ubuntu-22.04", pkg-name: "lightning", python-version: "3.12.7", pytorch-version: "2.5.1" }
+          - { os: "windows-2022", pkg-name: "lightning", python-version: "3.12.7", pytorch-version: "2.5.1" }
+          # only run PyTorch latest with Python latest, use PyTorch scope to limit dependency issues
+          - { os: "macOS-14", pkg-name: "pytorch", python-version: "3.12.7", pytorch-version: "2.5.1" }
+          - { os: "ubuntu-22.04", pkg-name: "pytorch", python-version: "3.12.7", pytorch-version: "2.5.1" }
+          - { os: "windows-2022", pkg-name: "pytorch", python-version: "3.12.7", pytorch-version: "2.5.1" }
           # "oldest" versions tests, only on minimum Python
-          - {os: "macOS-11", pkg-name: "pytorch", python-version: "3.8", pytorch-version: "1.10", requires: "oldest"}  # 3.7 hangs
-          - {os: "ubuntu-20.04", pkg-name: "pytorch", python-version: "3.7", pytorch-version: "1.10", requires: "oldest"}
-          - {os: "windows-2022", pkg-name: "pytorch", python-version: "3.7", pytorch-version: "1.10", requires: "oldest"}
-          # run test under SLOW label
-          - {type: "slow", os: "macOS-11", pkg-name: "pytorch", python-version: "3.7", pytorch-version: "1.11"}
-          - {type: "slow", os: "ubuntu-20.04", pkg-name: "pytorch", python-version: "3.7", pytorch-version: "1.11"}
-          - {type: "slow", os: "windows-2022", pkg-name: "pytorch", python-version: "3.7", pytorch-version: "1.11"}
-          # "lightning" installs the monolithic package
-          - {os: "macOS-11", pkg-name: "lightning", python-version: "3.8", pytorch-version: "1.13"}
-          - {os: "ubuntu-20.04", pkg-name: "lightning", python-version: "3.8", pytorch-version: "1.13"}
-          - {os: "windows-2022", pkg-name: "lightning", python-version: "3.8", pytorch-version: "1.13"}
-
-    timeout-minutes: 70  # tests with macOS-11, py3.7 oldest takes much longer then expected
-
+          - { os: "macOS-14", pkg-name: "lightning", python-version: "3.9", pytorch-version: "2.1", requires: "oldest" }
+          - {
+              os: "ubuntu-20.04",
+              pkg-name: "lightning",
+              python-version: "3.9",
+              pytorch-version: "2.1",
+              requires: "oldest",
+            }
+          - {
+              os: "windows-2022",
+              pkg-name: "lightning",
+              python-version: "3.9",
+              pytorch-version: "2.1",
+              requires: "oldest",
+            }
+          # "pytorch" installs the standalone package
+          - { os: "macOS-14", pkg-name: "pytorch", python-version: "3.9", pytorch-version: "2.1" }
+          - { os: "ubuntu-20.04", pkg-name: "pytorch", python-version: "3.9", pytorch-version: "2.1" }
+          - { os: "windows-2022", pkg-name: "pytorch", python-version: "3.9", pytorch-version: "2.1" }
+    timeout-minutes: 50
+    env:
+      PACKAGE_NAME: ${{ matrix.pkg-name }}
+      TORCH_URL: "https://download.pytorch.org/whl/cpu/torch_stable.html"
+      TORCH_URL_STABLE: "https://download.pytorch.org/whl/cpu/torch_stable.html"
+      TORCH_URL_TEST: "https://download.pytorch.org/whl/test/cpu/torch"
+      FREEZE_REQUIREMENTS: ${{ ! (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/release/')) }}
+      PYPI_CACHE_DIR: "_pip-wheels"
+      # TODO: Remove this - Enable running MPS tests on this platform
+      DISABLE_MPS: ${{ matrix.os == 'macOS-14' && '1' || '0' }}
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
 
-    - name: basic setup
-      run: |
-        pip --version
-        pip install -q -r .actions/requirements.txt
+      - name: basic setup
+        run: pip install -q -r .actions/requirements.txt
 
-    - name: Setup macOS
-      if: runner.os == 'macOS'
-      run: |
-        brew install openmpi libuv  # Horovod on macOS requires OpenMPI, Gloo not currently supported
+      - name: Set min. dependencies
+        if: ${{ matrix.requires == 'oldest' }}
+        run: |
+          python .actions/assistant.py replace_oldest_ver
+          pip install "cython<3.0" wheel
+          pip install "pyyaml==5.4" --no-build-isolation
 
-    - name: Setup Windows
-      if: runner.os == 'windows'
-      run: |
-        python .actions/assistant.py requirements_prune_pkgs "--packages=[horovod]"
+      - name: Adjust PyTorch versions in requirements files
+        if: ${{ matrix.requires != 'oldest' }}
+        run: |
+          pip install -q -r requirements/ci.txt
+          python -m wget https://raw.githubusercontent.com/Lightning-AI/utilities/main/scripts/adjust-torch-versions.py
+          for fpath in `ls requirements/**/*.txt`; do \
+            python ./adjust-torch-versions.py $fpath ${{ matrix.pytorch-version }}; \
+          done
+          cat requirements/pytorch/base.txt
 
-    - name: Set min. dependencies
-      if: ${{ matrix.requires == 'oldest' }}
-      run: |
-        python .actions/assistant.py replace_oldest_ver
+      - name: pip wheels cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.PYPI_CACHE_DIR }}
+          key: pypi_wheels
+      - run: |
+          mkdir -p $PYPI_CACHE_DIR
+          ls -lh $PYPI_CACHE_DIR
 
-    - name: Pull legacy checkpoints
-      if: ${{ matrix.type != 'slow' }}
-      run: bash .actions/pull_legacy_checkpoints.sh
+      - name: Env. variables
+        run: |
+          # Switch PyTorch URL
+          python -c "print('TORCH_URL=' + str('${{env.TORCH_URL_TEST}}' if '${{ matrix.pytorch-version }}' == '2.5' else '${{env.TORCH_URL_STABLE}}'))" >> $GITHUB_ENV
+          # Switch coverage scope
+          python -c "print('COVERAGE_SCOPE=' + str('lightning' if '${{matrix.pkg-name}}' == 'lightning' else 'pytorch_lightning'))" >> $GITHUB_ENV
+          # if you install mono-package set dependency only for this subpackage
+          python -c "print('EXTRA_PREFIX=' + str('' if '${{matrix.pkg-name}}' != 'lightning' else 'pytorch-'))" >> $GITHUB_ENV
+          # Avoid issue on Windows with PyTorch 2.4: "RuntimeError: use_libuv was requested but PyTorch was build without libuv support"
+          python -c "print('USE_LIBUV=0' if '${{matrix.os}}' == 'windows-2022' and '${{matrix.pytorch-version}}' == '2.4' else '')" >> $GITHUB_ENV
 
-    - name: Adjust PyTorch versions in requirements files
-      if: ${{ matrix.requires != 'oldest' }}
-      run: |
-        for fpath in `ls requirements/**/*.txt`; do \
-          python ./requirements/pytorch/adjust-versions.py $fpath ${{ matrix.pytorch-version }}; \
-        done
-        cat requirements/pytorch/base.txt
+      - name: Install package & dependencies
+        timeout-minutes: 20
+        run: |
+          pip install ".[${EXTRA_PREFIX}extra,${EXTRA_PREFIX}test,${EXTRA_PREFIX}strategies]" -U --prefer-binary \
+            -r requirements/_integrations/accelerators.txt \
+            --find-links="${TORCH_URL}" --find-links="${PYPI_CACHE_DIR}"
+          pip list
+      - name: Drop LAI from extensions
+        if: ${{ matrix.pkg-name != 'lightning' }}
+        # Lightning is dependency of Habana or other accelerators/integrations so in case we test PL we need to remove it
+        run: pip uninstall -y lightning
+      - name: Drop PL for LAI
+        if: ${{ matrix.pkg-name == 'lightning' }}
+        run: pip uninstall -y pytorch-lightning
+      - name: Dump handy wheels
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        continue-on-error: true
+        uses: ./.github/actions/pip-wheels
+        with:
+          wheel-dir: ${{ env.PYPI_CACHE_DIR }}
+          torch-url: ${{ env.TORCH_URL }}
+          cache-key: "pypi_wheels"
 
-    - name: Get pip cache dir
-      id: pip-cache
-      run: echo "dir=$(pip cache dir)" >> $GITHUB_OUTPUT
+      - name: Cache datasets
+        uses: actions/cache@v4
+        with:
+          path: Datasets
+          key: pl-dataset
 
-    - name: pip cache
-      uses: actions/cache@v3
-      with:
-        path: ${{ steps.pip-cache.outputs.dir }}
-        key: ${{ runner.os }}-pip-py${{ matrix.python-version }}-${{ matrix.pkg-name }}-${{ matrix.release }}-${{ matrix.requires }}-${{ hashFiles('requirements/pytorch/*.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-py${{ matrix.python-version }}-${{ matrix.pkg-name }}-${{ matrix.release }}-${{ matrix.requires }}-
+      - name: Sanity check
+        run: |
+          set -e
+          python requirements/pytorch/check-avail-extras.py
+          python -c "from torch import __version__ as ver; assert ver.startswith('${{ matrix.pytorch-version }}'), ver"
 
-    - name: Env. variables
-      run: |
-        # Switch PyTorch URL
-        python -c "print('TORCH_URL=https://download.pytorch.org/whl/' + str('test/cpu/torch_test.html' if '${{matrix.release}}' == 'pre' else 'cpu/torch_stable.html'))" >> $GITHUB_ENV
-        # Switch coverage scope
-        python -c "print('COVERAGE_SCOPE=' + str('lightning' if '${{matrix.pkg-name}}' == 'lightning' else 'pytorch_lightning'))" >> $GITHUB_ENV
-        # Whether to run slow tests
-        python -c "print('PL_RUN_SLOW_TESTS=' + str(int('${{ matrix.type }}' == 'slow')))" >> $GITHUB_ENV
-        # Decide timeout
-        python -c "print('TEST_TIMEOUT=' + str(120 if '${{ matrix.type }}' == 'slow' else 60))" >> $GITHUB_ENV
+      - name: Adjust tests / env. -> PL
+        if: ${{ matrix.pkg-name != 'lightning' }}
+        run: |
+          python .actions/assistant.py copy_replace_imports --source_dir="./tests" \
+            --source_import="lightning.fabric,lightning.pytorch" \
+            --target_import="lightning_fabric,pytorch_lightning"
 
-    - name: Install package & dependencies
-      env:
-        PACKAGE_NAME: ${{ matrix.pkg-name }}
-        FREEZE_REQUIREMENTS: 1
-      run: |
-        pip install -e .[extra,test] "pytest-timeout" --upgrade --find-links ${TORCH_URL}
-        # TODO: installing the strategies from file as deepspeed expects already installed PyTorch and extras do not install base first
-        # pip install -r requirements/pytorch/strategies.txt --find-links ${TORCH_URL}
-        pip list
+      - name: Prevent using raw source
+        run: rm -rf src/
 
-    - name: Reinstall Horovod if necessary
-      if: runner.os != 'windows'
-      env:
-        HOROVOD_BUILD_ARCH_FLAGS: "-mfma"
-        HOROVOD_WITHOUT_MXNET: 1
-        HOROVOD_WITHOUT_TENSORFLOW: 1
-      run: |
-        HOROVOD_BUILT=$(python -c "import horovod.torch; horovod.torch.nccl_built(); print('SUCCESS')" || true)
-        if [[ $HOROVOD_BUILT != "SUCCESS" ]]; then
-          pip uninstall -y horovod
-          grep "horovod" requirements/pytorch/strategies.txt > requirements/pytorch/horovod.txt
-          pip install --no-cache-dir -r requirements/pytorch/horovod.txt
-        fi
-        horovodrun --check-build
-        python -c "import horovod.torch"
-        pip list
+      - name: Get legacy checkpoints
+        run: |
+          bash .actions/pull_legacy_checkpoints.sh
+          cd tests/legacy
+          bash generate_checkpoints.sh
+          ls -l checkpoints/
 
-    - name: Cache datasets
-      uses: actions/cache@v3
-      with:
-        path: Datasets
-        key: pl-dataset
+      - name: Testing Warnings
+        working-directory: tests/tests_pytorch
+        # needs to run outside `pytest`
+        run: python utilities/test_warnings.py
 
-    - name: Sanity check
-      run: |
-        python -c "from torch import __version__ as ver; assert ver.startswith('${{ matrix.pytorch-version }}'), ver"
-        python requirements/pytorch/check-avail-extras.py
+      - name: Testing PyTorch
+        working-directory: tests/tests_pytorch
+        # NOTE: do not include coverage report here, see: https://github.com/nedbat/coveragepy/issues/1003
+        run: |
+          echo $GITHUB_RUN_ID
+          python -m coverage run --source ${{ env.COVERAGE_SCOPE }} \
+            -m pytest . -v --timeout=60 --durations=50 --random-order-seed=$GITHUB_RUN_ID
 
-    - name: Adjust tests
-      if: ${{ matrix.pkg-name == 'lightning' }}
-      run: |
-        python .actions/assistant.py copy_replace_imports --source_dir="./tests" \
-          --source_import="pytorch_lightning,lightning_fabric" \
-          --target_import="lightning.pytorch,lightning.fabric"
+      - name: Statistics
+        if: success()
+        working-directory: tests/tests_pytorch
+        run: |
+          coverage report
+          coverage xml
 
-    - name: Testing Warnings
-      # the stacklevel can only be set on >=3.7
-      if: matrix.python-version != '3.7'
-      working-directory: tests/tests_pytorch
-      # needs to run outside of `pytest`
-      run: python utilities/test_warnings.py
-
-    - name: Testing PyTorch
-      working-directory: tests/tests_pytorch
-      # NOTE: do not include coverage report here, see: https://github.com/nedbat/coveragepy/issues/1003
-      run: |
-        python -m coverage run --source ${COVERAGE_SCOPE} \
-          -m pytest . -v \
-          --timeout=${TEST_TIMEOUT} --durations=50 \
-          --reruns 3 --reruns-delay 1 \
-          --junitxml=results-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.requires }}-${{ matrix.release }}.xml
-
-    - name: Upload pytest results
-      if: failure()
-      uses: actions/upload-artifact@v3
-      with:
-        name: unittest-results-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.requires }}-${{ matrix.release }}
-        path: tests/tests_pytorch/results-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.requires }}-${{ matrix.release }}.xml
-
-    - name: Statistics
-      if: success()
-      working-directory: tests/tests_pytorch
-      run: |
-        coverage report
-        coverage xml
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      # see: https://github.com/actions/toolkit/issues/399
-      continue-on-error: true
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        file: tests/tests_pytorch/coverage.xml
-        flags: ${COVERAGE_SCOPE},cpu,pytest-full,python${{ matrix.python-version }},pytorch${{ matrix.pytorch-version }}
-        name: CPU-coverage
-        fail_ci_if_error: false
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        # see: https://github.com/actions/toolkit/issues/399
+        continue-on-error: true
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: tests/tests_pytorch/coverage.xml
+          flags: ${{ env.COVERAGE_SCOPE }},cpu,pytest-full,python${{ matrix.python-version }},pytorch${{ matrix.pytorch-version }}
+          name: CPU-coverage
+          fail_ci_if_error: false

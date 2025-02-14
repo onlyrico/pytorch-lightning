@@ -39,37 +39,3 @@ To resume training from a cloud checkpoint use a cloud url.
     trainer.fit(model, ckpt_path="s3://my_bucket/ckpts/classifier.ckpt")
 
 PyTorch Lightning uses `fsspec <https://filesystem-spec.readthedocs.io/>`_ internally to handle all filesystem operations.
-
-----
-
-***************************
-Modularize your checkpoints
-***************************
-Checkpoints can also save the state of :doc:`datamodules <../extensions/datamodules_state>` and :doc:`callbacks <../extensions/callbacks_state>`.
-
-----
-
-****************************
-Modify a checkpoint anywhere
-****************************
-When you need to change the components of a checkpoint before saving or loading, use the :meth:`~pytorch_lightning.core.hooks.CheckpointHooks.on_save_checkpoint` and :meth:`~pytorch_lightning.core.hooks.CheckpointHooks.on_load_checkpoint` of your ``LightningModule``.
-
-.. code:: python
-
-    class LitModel(pl.LightningModule):
-        def on_save_checkpoint(self, checkpoint):
-            checkpoint["something_cool_i_want_to_save"] = my_cool_pickable_object
-
-        def on_load_checkpoint(self, checkpoint):
-            my_cool_pickable_object = checkpoint["something_cool_i_want_to_save"]
-
-Use the above approach when you need to couple this behavior to your LightningModule for reproducibility reasons. Otherwise, Callbacks also have the :meth:`~pytorch_lightning.callbacks.callback.Callback.on_save_checkpoint` and :meth:`~pytorch_lightning.callbacks.callback.Callback.on_load_checkpoint` which you should use instead:
-
-.. code:: python
-
-    class LitCallback(pl.Callback):
-        def on_save_checkpoint(self, checkpoint):
-            checkpoint["something_cool_i_want_to_save"] = my_cool_pickable_object
-
-        def on_load_checkpoint(self, checkpoint):
-            my_cool_pickable_object = checkpoint["something_cool_i_want_to_save"]

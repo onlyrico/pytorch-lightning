@@ -1,4 +1,4 @@
-# Copyright The PyTorch Lightning team.
+# Copyright The Lightning AI team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ from unittest import mock
 
 import pytest
 
-from lightning_fabric.plugins.environments import LSFEnvironment
+from lightning.fabric.plugins.environments import LSFEnvironment
 
 
 def _make_rankfile(tmp_path):
@@ -42,8 +42,9 @@ def test_empty_lsb_djob_rankfile():
 
 def test_missing_lsb_job_id(tmp_path):
     """Test an error when the job id cannot be found."""
-    with mock.patch.dict(os.environ, {"LSB_DJOB_RANKFILE": _make_rankfile(tmp_path)}), pytest.raises(
-        ValueError, match="Could not find job id in environment variable LSB_JOBID"
+    with (
+        mock.patch.dict(os.environ, {"LSB_DJOB_RANKFILE": _make_rankfile(tmp_path)}),
+        pytest.raises(ValueError, match="Could not find job id in environment variable LSB_JOBID"),
     ):
         LSFEnvironment()
 
